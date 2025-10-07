@@ -1,0 +1,283 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Room Expense Tracker</title>
+<style>
+:root {
+  --bg: #ffffff;
+  --text: #222;
+  --card: #fff;
+  --table-border: #ddd;
+  --accent: #007bff;
+  --highlight: #28a745;
+  --remove: #dc3545;
+}
+body.dark {
+  --bg: #121212;
+  --text: #e0e0e0;
+  --card: #1f1f1f;
+  --table-border: #333;
+  --accent: #2196f3;
+  --highlight: #4caf50;
+  --remove: #e74c3c;
+}
+body {
+  font-family: "Poppins", sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  margin: 0;
+  padding: 30px;
+  transition: background 0.3s, color 0.3s;
+}
+.container {
+  max-width: 750px;
+  background: var(--card);
+  margin: auto;
+  border-radius: 12px;
+  padding: 25px;
+  box-shadow: 0 0 20px rgba(0,0,0,0.15);
+  transition: background 0.3s;
+}
+h2, h3 { text-align: center; color: var(--text); }
+input, select, button {
+  padding: 6px;
+  margin: 4px;
+  border-radius: 6px;
+  border: 1px solid var(--table-border);
+  font-size: 15px;
+  background: var(--card);
+  color: var(--text);
+}
+button {
+  cursor: pointer;
+  background-color: var(--highlight);
+  color: #fff;
+  border: none;
+}
+button:hover { opacity: 0.9; }
+table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 10px 0;
+}
+th, td {
+  border: 1px solid var(--table-border);
+  padding: 8px;
+  text-align: center;
+}
+th {
+  background-color: var(--accent);
+  color: #fff;
+}
+tr:hover { background-color: rgba(0,0,0,0.05); }
+tfoot td { font-weight: bold; background: rgba(40,167,69,0.1); }
+.remove-btn {
+  background-color: var(--remove);
+  color: white;
+  border: none;
+  border-radius: 5px;
+  padding: 4px 8px;
+  cursor: pointer;
+}
+.remove-btn:hover { opacity: 0.9; }
+.action-bar {
+  text-align: center;
+  margin-top: 15px;
+}
+.action-bar button { margin: 5px; }
+</style>
+</head>
+<body>
+<div class="container">
+<h2>🏠 Room Expense Tracker</h2>
+<label>Total Room Rent (AED):</label>
+<input type="number" id="rent" placeholder="Enter total rent">
+
+<h3>🧾 Expenses</h3>
+<table id="expenseTable">
+<thead>
+<tr><th>Date</th><th>Person</th><th>Amount (AED)</th><th>Action</th></tr>
+</thead>
+<tbody></tbody>
+</table>
+
+<div class="action-bar">
+<button onclick="addExpenseRow()">➕ Add Row</button>
+<button onclick="calculate()">💰 Calculate</button>
+<button onclick="resetAll()">🔄 Reset All</button>
+<button onclick="downloadPDF()">📄 Download PDF</button>
+<button onclick="toggleDarkMode()">🌙 Toggle Dark Mode</button>
+</div>
+
+<h3>📊 Payment Summary</h3>
+<table id="resultTable">
+<thead>
+<tr>
+<th>Person</th>
+<th>Total Paid</th>
+<th>Expense Share</th>
+<th>Rent Share</th>
+<th>Amount to Pay</th>
+</tr>
+</thead>
+<tbody></tbody>
+<tfoot></tfoot>
+</table>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<script>
+const people = ["RAMSHAD", "ASHIR", "ZAKKI", "ASEEF", "KUTTAPI"];
+const username = "pnrramshad";
+const repo = "Mess";
+const path = "data/expenses.json";
+const token = "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"; // Replace with new token for security
+
+function addExpenseRow(person = "", amount = "", date = "") {
+  const tbody = document.querySelector("#expenseTable tbody");
+  const row = document.createElement("tr");
+  row.innerHTML = `
+    <td><input type="date" class="date" value="${date || new Date().toISOString().split('T')[0]}"></td>
+    <td>
+      <select class="person-select">
+        ${people.map(p => `<option value="${p}" ${p===person?"selected":""}>${p}</option>`).join('')}
+      </select>
+    </td>
+    <td><input type="number" class="amount" value="${amount}" placeholder="0"></td>
+    <td><button class="remove-btn" onclick="this.closest('tr').remove(); calculate();">❌</button></td>
+  `;
+  tbody.appendChild(row);
+}
+
+function calculate() {
+  const rent = parseFloat(document.getElementById('rent').value) || 0;
+  const totals = {};
+  people.forEach(p => totals[p] = 0);
+  document.querySelectorAll("#expenseTable tbody tr").forEach(row => {
+    const person = row.querySelector(".person-select").value;
+    const amount = parseFloat(row.querySelector(".amount").value) || 0;
+    if (amount > 0) totals[person] += amount;
+  });
+  const totalExpenses = Object.values(totals).reduce((a,b)=>a+b,0);
+  const expenseShare = totalExpenses / people.length;
+  const rentShare = rent / people.length;
+
+  const tbody = document.querySelector("#resultTable tbody");
+  const tfoot = document.querySelector("#resultTable tfoot");
+  tbody.innerHTML = "";
+  tfoot.innerHTML = "";
+
+  people.forEach(p => {
+    const amountToPay = (rentShare + expenseShare - totals[p]).toFixed(2);
+    tbody.innerHTML += `
+      <tr>
+        <td>${p}</td>
+        <td>${totals[p].toFixed(2)}</td>
+        <td>${expenseShare.toFixed(2)}</td>
+        <td>${rentShare.toFixed(2)}</td>
+        <td style="font-weight:bold;color:${amountToPay>0?'#d9534f':'#28a745'};">
+        ${amountToPay}
+        </td>
+      </tr>`;
+  });
+  tfoot.innerHTML = `<tr><td colspan="2">Total Expenses</td><td colspan="3">${totalExpenses.toFixed(2)} AED</td></tr>`;
+}
+
+// Dark Mode Toggle
+function toggleDarkMode() {
+  document.body.classList.toggle("dark");
+}
+
+// Reset all
+function resetAll() {
+  if(!confirm("Clear all data?")) return;
+  document.getElementById("rent").value = "";
+  document.querySelector("#expenseTable tbody").innerHTML = "";
+  document.querySelector("#resultTable tbody").innerHTML = "";
+  document.querySelector("#resultTable tfoot").innerHTML = "";
+  people.forEach(() => addExpenseRow());
+}
+
+// PDF Download
+function downloadPDF() {
+  const { jsPDF } = window.jspdf;
+  const doc = new jsPDF();
+  doc.text("🏠 Room Expense Tracker Summary", 10, 10);
+  let y = 20;
+  const rent = document.getElementById('rent').value;
+  doc.text(`Total Rent: ${rent} AED`, 10, y);
+  y += 10;
+  doc.text("Name | Paid | Expense Share | Rent Share | To Pay", 10, y);
+  y += 6;
+  document.querySelectorAll("#resultTable tbody tr").forEach(row => {
+    const cols = Array.from(row.children).map(td => td.textContent.trim());
+    doc.text(cols.join(" | "), 10, y);
+    y += 6;
+  });
+  doc.save("Room_Expense_Tracker.pdf");
+}
+
+// Save to GitHub
+async function saveToGitHub() {
+  const rent = document.getElementById('rent').value;
+  const rows = Array.from(document.querySelectorAll("#expenseTable tbody tr")).map(r => ({
+    date: r.querySelector(".date").value,
+    person: r.querySelector(".person-select").value,
+    amount: r.querySelector(".amount").value
+  }));
+
+  const data = { rent, rows, updated: new Date().toISOString() };
+
+  try {
+    const url = `https://api.github.com/repos/${username}/${repo}/contents/${path}`;
+    const old = await fetch(url, { headers: { Authorization: `token ${token}` } }).then(r => r.json());
+    const updatedContent = btoa(JSON.stringify(data, null, 2));
+
+    await fetch(url, {
+      method: "PUT",
+      headers: { Authorization: `token ${token}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ message: "Auto-update daily expenses", content: updatedContent, sha: old.sha })
+    });
+    console.log("✅ Data auto-saved to GitHub!");
+  } catch(err) {
+    console.log("❌ GitHub save error:", err);
+  }
+}
+
+// Load from GitHub
+async function loadFromGitHub() {
+  const url = "https://raw.githubusercontent.com/pnrramshad/Mess/main/data/expenses.json";
+  try {
+    const res = await fetch(url);
+    if (!res.ok) throw new Error("Failed to fetch GitHub data");
+    const data = await res.json();
+    if (data.rent) document.getElementById('rent').value = data.rent;
+    document.querySelector("#expenseTable tbody").innerHTML = "";
+    if (data.rows && data.rows.length) {
+      data.rows.forEach(r => addExpenseRow(r.person, r.amount, r.date));
+    } else {
+      people.forEach(() => addExpenseRow());
+    }
+    calculate();
+  } catch(err) {
+    console.log("Error loading GitHub data:", err);
+  }
+}
+
+// Auto-save on change
+let saveTimeout;
+document.addEventListener("input", e => {
+  if (e.target.classList.contains("amount") || e.target.id === "rent" || e.target.classList.contains("date") || e.target.classList.contains("person-select")) {
+    calculate();
+    clearTimeout(saveTimeout);
+    saveTimeout = setTimeout(() => { saveToGitHub(); }, 1500);
+  }
+});
+
+// Initialize
+window.addEventListener("DOMContentLoaded", loadFromGitHub);
+</script>
+</body>
+</html>
