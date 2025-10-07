@@ -1,0 +1,9 @@
+
+{
+"roommates": [],
+"expenses": [],
+"roomRent": 0,
+"users": [
+{"username":"admin","password":"ramshad","role":"admin"}
+]
+}
