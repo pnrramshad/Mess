@@ -146,18 +146,32 @@
                         </button>
                     </div>
                 </div>
+                
+                <div class="mt-6 flex items-start gap-4 p-4 bg-amber-500/5 rounded-xl border border-amber-500/10">
+                    <i data-lucide="info" class="w-4 h-4 text-amber-500 mt-0.5"></i>
+                    <p class="text-[10px] text-zinc-400 leading-relaxed">
+                        <span class="text-amber-500 font-bold uppercase">Pro Tip:</span> For best results, place the note on a dark, flat surface with natural lighting. Avoid heavy shadows or glares on the holographic strips.
+                    </p>
+                </div>
             </div>
         </section>
 
         <!-- Loading -->
         <section id="loadingState" class="hidden py-20 flex flex-col items-center justify-center space-y-6 text-center">
             <div class="w-12 h-12 border-4 border-amber-500/20 border-t-amber-500 rounded-full animate-spin"></div>
-            <p class="text-xs font-bold text-amber-500 uppercase tracking-[0.4em]">Extracting forensic features from source...</p>
+            <p class="text-xs font-bold text-amber-500 uppercase tracking-[0.4em]">Calibrating Forensic Neural Engine...</p>
         </section>
 
         <!-- Results -->
         <section id="resultSection" class="hidden space-y-6">
             <div class="glass-panel rounded-[2.5rem] overflow-hidden shadow-2xl">
+                <div id="qualityWarning" class="hidden bg-amber-500 text-black px-8 py-3 flex items-center justify-between text-[10px] font-black uppercase tracking-widest">
+                    <div class="flex items-center gap-2">
+                        <i data-lucide="alert-triangle" class="w-4 h-4"></i>
+                        <span>Low Confidence Scan: Sub-optimal image quality detected.</span>
+                    </div>
+                </div>
+
                 <div id="statusBanner" class="py-4 px-8 flex justify-between items-center text-[10px] font-black tracking-[0.2em] uppercase">
                     <div class="flex items-center gap-3">
                         <i id="statusIcon" class="w-4 h-4"></i>
@@ -213,7 +227,6 @@
                                 <button id="forensicToggle" class="px-4 py-2 rounded-lg bg-zinc-800 text-[9px] font-bold uppercase hover:bg-zinc-700 transition-colors">Micro-Print Scan</button>
                             </div>
                         </div>
-                        <p class="text-[10px] text-zinc-500 italic text-center">These specimens are cropped directly from your uploaded image for 100% forensic accuracy.</p>
                         <div id="specimenGrid" class="grid grid-cols-1 md:grid-cols-2 gap-6"></div>
                     </div>
 
@@ -228,7 +241,7 @@
                                 <p id="rarityLevel" class="text-sm text-white font-bold italic">Common</p>
                             </div>
                             <div class="p-6 rounded-2xl bg-white/5 border border-white/5 space-y-2">
-                                <span class="text-[9px] font-bold text-zinc-500 uppercase">Estimated Collector Val.</span>
+                                <span class="text-[9px] font-bold text-zinc-500 uppercase">Est. Collector Val.</span>
                                 <p id="collectorVal" class="text-sm text-amber-500 font-bold italic">Face Value</p>
                             </div>
                         </div>
@@ -239,8 +252,12 @@
                     </div>
 
                     <div id="ecosystemTab" class="content-pane hidden space-y-6">
-                        <p class="text-[10px] font-bold text-zinc-600 uppercase tracking-[0.2em]">Circulating Denominations</p>
+                        <div class="flex items-center gap-3 mb-4">
+                            <i data-lucide="layers" class="text-amber-500 w-4 h-4"></i>
+                            <h4 class="text-[10px] font-bold text-zinc-600 uppercase tracking-[0.2em]">Other Circulating Denominations</h4>
+                        </div>
                         <div id="circDenoms" class="grid grid-cols-2 sm:grid-cols-4 gap-4"></div>
+                        <p class="text-[9px] text-zinc-500 italic mt-6">* Ecosystem view shows official active tender variants for this currency family.</p>
                     </div>
                 </div>
             </div>
@@ -282,7 +299,8 @@
             printStatus: document.getElementById('printStatus'),
             rarityLevel: document.getElementById('rarityLevel'),
             collectorVal: document.getElementById('collectorVal'),
-            collectorBadge: document.getElementById('collectorBadge')
+            collectorBadge: document.getElementById('collectorBadge'),
+            qualityWarning: document.getElementById('qualityWarning')
         };
 
         lucide.createIcons();
@@ -369,58 +387,61 @@
             if (!base64Image) return;
             el.loadingState.classList.remove('hidden');
             el.resultSection.classList.add('hidden');
+            el.qualityWarning.classList.add('hidden');
 
-            const systemPrompt = `Forensic analysis of banknote. Return JSON: { 
-                "currency": "ISO", "denomination": "Value", "isDiscontinued": boolean, 
-                "seriesYear": "Year", "circulatingDenominations": ["Values"],
-                "securityFeatures": [{"name": "Feature", "description": "Short forensic note", "location_prompt": "describe where this is on the note e.g. bottom left"}], 
-                "statusReason": "Advice",
-                "serialNumber": "Extracted Serial",
+            const systemPrompt = `Analyze this banknote forensic scan. 
+            Identify the denomination (numeric value) and currency ISO code. 
+            EVEN IF THE IMAGE IS SLIGHTLY BLURRY, attempt to identify visible patterns.
+            
+            Return JSON: { 
+                "currency": "ISO Code", 
+                "denomination": "Numeric Value", 
+                "isDiscontinued": boolean, 
+                "seriesYear": "Year/Series", 
+                "circulatingDenominations": ["List of numeric values in this currency's ecosystem"],
+                "securityFeatures": [{"name": "Feature", "description": "Short forensic note", "location_prompt": "describe where this is on the note"}], 
+                "statusReason": "Advice on authenticity",
+                "serialNumber": "Serial if visible",
                 "exchangeRateToUSD": number,
-                "mintHistory": "Detailed historical context",
+                "mintHistory": "Historical context",
                 "isRare": boolean,
-                "collectorValue": "Estimated USD value if rare"
+                "collectorValue": "Value in USD",
+                "lowConfidence": boolean
             }`;
 
             try {
                 const data = await apiRequest(
                     `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${apiKey}`,
                     {
-                        contents: [{ parts: [{ text: "Full Forensic Audit." }, { inlineData: { mimeType: "image/png", data: base64Image } }] }],
+                        contents: [{ parts: [{ text: "Forensic analysis of this note." }, { inlineData: { mimeType: "image/png", data: base64Image } }] }],
                         systemInstruction: { parts: [{ text: systemPrompt }] },
                         generationConfig: { responseMimeType: "application/json" }
                     }
                 );
-                const parsed = JSON.parse(data.candidates[0].content.parts[0].text);
+                const textResult = data.candidates[0].content.parts[0].text;
+                const parsed = JSON.parse(textResult);
                 renderData(parsed);
             } catch (err) { 
                 console.error(err);
-                alert("Audit failed. Please ensure the image is clear."); 
+                el.loadingState.classList.add('hidden');
+                alert("Audit Engine Error. Please try a clearer photo.");
             }
             finally { el.loadingState.classList.add('hidden'); }
         });
 
-        // NEW: Real forensic enhancement of source image regions
         async function enhanceSourceFeature(featureName, locationPrompt) {
-            const prompt = `Crop and forensically enhance the area showing the "${featureName}" (${locationPrompt}) from this banknote image. Zoom in closely to show the physical texture, ink, or substrate fibers. Do not generate new elements; show exactly what is in the original image but sharper and more contrasted.`;
+            const prompt = `From this banknote, crop the "${featureName}" at "${locationPrompt}". Respond only with the image.`;
             try {
                 const result = await apiRequest(
                     `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-image-preview:generateContent?key=${apiKey}`,
                     { 
-                        contents: [{ 
-                            parts: [
-                                { text: prompt }, 
-                                { inlineData: { mimeType: "image/png", data: base64Image } }
-                            ] 
-                        }],
+                        contents: [{ parts: [{ text: prompt }, { inlineData: { mimeType: "image/png", data: base64Image } }] }],
                         generationConfig: { responseModalities: ['TEXT', 'IMAGE'] }
                     }
                 );
                 const base64 = result.candidates?.[0]?.content?.parts?.find(p => p.inlineData)?.inlineData?.data;
                 return base64 ? `data:image/png;base64,${base64}` : null;
-            } catch (e) { 
-                return null; 
-            }
+            } catch (e) { return null; }
         }
 
         async function renderData(data) {
@@ -430,14 +451,16 @@
             el.resReason.innerText = data.statusReason;
             el.seriesLabel.innerText = data.seriesYear;
             
+            if (data.lowConfidence) el.qualityWarning.classList.remove('hidden');
+
             el.serialDisplay.innerText = data.serialNumber || "UNREADABLE";
-            el.ocrStatus.innerText = "PARSING_COMPLETE";
+            el.ocrStatus.innerText = "PARSED";
             el.fxValue.innerText = `${(1 / (data.exchangeRateToUSD || 1)).toFixed(2)} ${data.currency} / 1 USD`;
             el.usdValue.innerText = `≈ $${(parseFloat(data.denomination) * (data.exchangeRateToUSD || 0)).toFixed(2)}`;
 
             el.mintNotes.innerText = data.mintHistory;
             el.rarityLevel.innerText = data.isRare ? "High" : "Standard";
-            el.printStatus.innerText = data.isRare ? "Collector Variant" : "General Circulation";
+            el.printStatus.innerText = data.isRare ? "Rare/Variant" : "General";
             el.collectorVal.innerText = data.collectorValue || "Face Value";
             el.collectorBadge.classList.toggle('hidden', !data.isRare);
 
@@ -449,37 +472,36 @@
                 el.statusLabel.innerText = "VALID TENDER";
             }
 
+            // Ecosystem Tab logic
             el.circDenoms.innerHTML = (data.circulatingDenominations || []).map(d => `
-                <div class="p-6 rounded-2xl border ${d.toString() === data.denomination.toString() ? 'bg-white text-black border-white' : 'bg-black/40 border-white/5 text-zinc-500'} flex flex-col items-center">
+                <div class="p-6 rounded-2xl border ${d.toString() === data.denomination.toString() ? 'bg-amber-500 text-black border-amber-500' : 'bg-black/40 border-white/5 text-zinc-500'} flex flex-col items-center">
                     <span class="text-xl font-black">${d}</span>
                     <span class="text-[8px] font-bold uppercase">${data.currency}</span>
                 </div>
             `).join('');
 
             el.securityTab.innerHTML = (data.securityFeatures || []).map((f, i) => `
-                <div class="glass-panel p-5 rounded-3xl border border-white/5 space-y-4 overflow-hidden hologram-shimmer" onmousemove="this.style.setProperty('--tilt', (event.offsetX/10)+'deg')">
+                <div class="glass-panel p-5 rounded-3xl border border-white/5 space-y-4 overflow-hidden hologram-shimmer">
                     <div class="flex justify-between items-center">
                         <span class="text-[9px] font-bold text-amber-500 uppercase tracking-widest">${f.name}</span>
-                        <span class="text-[8px] text-zinc-600 font-mono italic">REAL_SPECIMEN_S${i+1}</span>
+                        <span class="text-[8px] text-zinc-600 font-mono italic">REAL_S${i+1}</span>
                     </div>
                     <div id="specimen-img-${i}" class="h-48 rounded-xl specimen-loading flex items-center justify-center overflow-hidden">
                         <i data-lucide="scan-line" class="w-6 h-6 text-zinc-800"></i>
                     </div>
-                    <p class="text-[10px] text-zinc-400 italic leading-snug">${f.description}</p>
+                    <p class="text-[10px] text-zinc-400 italic">${f.description}</p>
                 </div>
             `).join('');
             
             lucide.createIcons();
 
             data.securityFeatures.forEach(async (f, i) => {
-                // Now extracting directly from YOUR photo
                 const enhancedUrl = await enhanceSourceFeature(f.name, f.location_prompt);
                 const container = document.getElementById(`specimen-img-${i}`);
                 if (container) {
                     container.classList.remove('specimen-loading');
-                    // Fallback to original image if enhancement fails, but it will be a 100% real image either way
                     const finalUrl = enhancedUrl || originalImgSrc;
-                    container.innerHTML = `<img src="${finalUrl}" class="w-full h-full object-cover specimen-view transition-all duration-500" alt="${f.name}">`;
+                    container.innerHTML = `<img src="${finalUrl}" class="w-full h-full object-cover specimen-view transition-all" alt="${f.name}">`;
                 }
             });
         }
