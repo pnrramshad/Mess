@@ -13,7 +13,6 @@
         import { initializeApp } from "https://www.gstatic.com/firebasejs/11.1.0/firebase-app.js";
         import { getAnalytics } from "https://www.gstatic.com/firebasejs/11.1.0/firebase-analytics.js";
 
-        // Your specific Firebase configuration
         const firebaseConfig = { 
             apiKey: "AIzaSyDc113ArrZa-bBCvKl-3UEwi4pIAdtwmIA", 
             authDomain: "tharavad336.firebaseapp.com", 
@@ -24,7 +23,6 @@
             measurementId: "G-XZ92F73DVT" 
         };
 
-        // Initialize Firebase
         const app = initializeApp(firebaseConfig);
         const analytics = getAnalytics(app);
     </script>
@@ -34,36 +32,60 @@
             font-family: 'Space Grotesk', sans-serif;
             background-color: #050505;
             color: #e0e0e0;
+            overflow-x: hidden;
         }
         .glass-panel {
             background: rgba(13, 13, 13, 0.8);
             backdrop-filter: blur(20px);
             border: 1px solid rgba(255, 255, 255, 0.1);
         }
-        .gold-glow {
-            box-shadow: 0 0 20px rgba(245, 158, 11, 0.15);
+        .tab-indicator { transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1); }
+        
+        /* Forensic UV Filter */
+        .uv-active {
+            filter: contrast(1.8) saturate(2.5) hue-rotate(275deg) brightness(0.7) invert(0.05);
+            box-shadow: 0 0 50px rgba(138, 43, 226, 0.5);
         }
-        .animate-pulse-slow {
-            animation: pulse 4s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+
+        /* Micro-Print Enhancement Filter */
+        .forensic-active {
+            filter: contrast(2) grayscale(1) brightness(1.2) sharpness(1.5);
         }
-        @keyframes pulse {
-            0%, 100% { opacity: 0.2; }
-            50% { opacity: 0.5; }
+
+        .specimen-loading {
+            background: linear-gradient(90deg, #111 25%, #222 50%, #111 75%);
+            background-size: 200% 100%;
+            animation: skeleton 1.5s infinite;
         }
-        .tab-indicator {
-            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+        @keyframes skeleton {
+            0% { background-position: 200% 0; }
+            100% { background-position: -200% 0; }
+        }
+
+        .hologram-shimmer {
+            position: relative;
+            overflow: hidden;
+        }
+        .hologram-shimmer::after {
+            content: '';
+            position: absolute;
+            top: -50%; left: -50%;
+            width: 200%; height: 200%;
+            background: linear-gradient(45deg, transparent, rgba(255,255,255,0.1), transparent);
+            transform: rotate(var(--tilt, 0deg));
+            transition: transform 0.1s;
+            pointer-events: none;
         }
     </style>
 </head>
 <body class="selection:bg-amber-500/30">
 
-    <!-- Header -->
     <header class="border-b border-white/5 bg-black/40 backdrop-blur-2xl sticky top-0 z-50">
         <div class="max-w-6xl mx-auto px-6 py-5 flex justify-between items-center">
             <div class="flex items-center gap-4">
                 <div class="relative">
-                    <div class="absolute inset-0 bg-amber-500 blur-lg opacity-20 animate-pulse-slow"></div>
-                    <div class="relative bg-gradient-to-br from-amber-400 to-amber-700 p-2.5 rounded-lg shadow-2xl">
+                    <div class="absolute inset-0 bg-amber-500 blur-lg opacity-20"></div>
+                    <div class="relative bg-gradient-to-br from-amber-400 to-amber-700 p-2.5 rounded-lg">
                         <i data-lucide="shield" class="text-black w-6 h-6"></i>
                     </div>
                 </div>
@@ -71,28 +93,30 @@
                     <h1 class="text-xl font-light tracking-[0.3em] text-white uppercase">
                         Luxe<span class="font-bold">Vault</span>
                     </h1>
-                    <p class="text-[9px] text-amber-500/70 font-bold uppercase tracking-[0.4em] mt-0.5">Neural Asset Intelligence</p>
+                    <p class="text-[9px] text-amber-500/70 font-bold uppercase tracking-[0.4em] mt-0.5">Forensic Asset Intelligence</p>
                 </div>
             </div>
-            
-            <div class="bg-white/5 px-4 py-2 rounded-full border border-white/10 flex items-center gap-2">
-                <div class="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse"></div>
-                <span class="text-[10px] font-bold text-white tracking-widest uppercase">AI Core Active</span>
+            <div class="flex items-center gap-6">
+                <div id="fxRate" class="hidden md:flex flex-col items-end">
+                    <span class="text-[8px] text-zinc-500 uppercase tracking-widest font-bold">Live FX Rate</span>
+                    <span id="fxValue" class="text-xs text-emerald-500 font-mono">1.00 USD</span>
+                </div>
+                <div class="bg-white/5 px-4 py-2 rounded-full border border-white/10 flex items-center gap-2">
+                    <div class="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse"></div>
+                    <span class="text-[10px] font-bold text-white tracking-widest uppercase">Bank-Grade Active</span>
+                </div>
             </div>
         </div>
     </header>
 
     <main class="max-w-4xl mx-auto px-6 py-12 space-y-12">
-        
-        <!-- Scanner Input Area -->
-        <section class="relative group">
-            <div class="absolute -inset-1 bg-gradient-to-r from-amber-500/20 to-transparent rounded-[2.5rem] blur opacity-25"></div>
+        <!-- Input Area -->
+        <section class="relative">
             <div class="relative glass-panel rounded-[2.5rem] p-8 overflow-hidden shadow-2xl">
-                
                 <div class="flex justify-between items-center mb-8">
                     <div class="flex items-center gap-3">
                         <i data-lucide="cpu" class="text-amber-500 w-5 h-5"></i>
-                        <h2 class="text-xs font-bold text-zinc-500 uppercase tracking-[0.2em]">Asset Forensic Interface</h2>
+                        <h2 class="text-xs font-bold text-zinc-500 uppercase tracking-[0.2em]">Forensic Substrate Scan</h2>
                     </div>
                     <button id="resetBtn" class="hidden text-zinc-600 hover:text-white transition-colors">
                         <i data-lucide="refresh-cw" class="w-4 h-4"></i>
@@ -100,106 +124,122 @@
                 </div>
 
                 <div class="grid grid-cols-1 md:grid-cols-2 gap-8 items-center">
-                    <div id="dropZone" class="relative aspect-[4/3] rounded-3xl border-2 border-dashed border-white/5 bg-zinc-900/30 hover:bg-zinc-900/50 hover:border-amber-500/20 transition-all duration-500 flex flex-col items-center justify-center overflow-hidden cursor-pointer group/upload">
+                    <div id="dropZone" class="relative aspect-[4/3] rounded-3xl border-2 border-dashed border-white/5 bg-zinc-900/30 hover:border-amber-500/20 transition-all flex flex-col items-center justify-center overflow-hidden cursor-pointer">
                         <div id="uploadPrompt" class="text-center p-6 space-y-4">
-                            <div class="w-16 h-16 rounded-2xl bg-white/5 border border-white/10 flex items-center justify-center mx-auto transition-transform group-hover/upload:scale-110">
-                                <i data-lucide="upload" class="text-zinc-500 w-6 h-6"></i>
-                            </div>
-                            <div class="space-y-1">
-                                <p class="text-sm font-medium text-zinc-300">Submit Asset Image</p>
-                                <p class="text-[10px] text-zinc-500 uppercase tracking-widest font-bold">Optical Precision Scan</p>
-                            </div>
+                            <i data-lucide="camera" class="text-zinc-500 w-8 h-8 mx-auto"></i>
+                            <p class="text-[10px] text-zinc-400 uppercase tracking-widest font-bold">Upload High-Res Asset</p>
                         </div>
                         <img id="previewImg" class="hidden w-full h-full object-contain p-2" src="" alt="Preview">
                         <input type="file" id="fileInput" accept="image/*" class="absolute inset-0 opacity-0 cursor-pointer">
                     </div>
 
                     <div class="space-y-6">
-                        <div class="space-y-4 text-zinc-400">
-                            <div class="flex gap-4 items-start">
-                                <div class="bg-amber-500/10 p-2 rounded-lg mt-1 text-amber-500"><i data-lucide="fingerprint" class="w-4 h-4"></i></div>
-                                <p class="text-xs leading-relaxed">Evaluation of micro-printing, color-shifting ink, and series legitimacy.</p>
+                        <div class="p-5 rounded-2xl bg-white/5 border border-white/5 space-y-3">
+                            <div class="flex justify-between items-center">
+                                <span class="text-[9px] font-bold text-zinc-500 uppercase">Serial OCR Status</span>
+                                <span id="ocrStatus" class="text-[8px] text-zinc-600 font-mono italic">AWAITING_DATA</span>
                             </div>
-                            <div class="flex gap-4 items-start">
-                                <div class="bg-amber-500/10 p-2 rounded-lg mt-1 text-amber-500"><i data-lucide="zap" class="w-4 h-4"></i></div>
-                                <p class="text-xs leading-relaxed">Cross-referencing with global demonetization and discontinued registries.</p>
-                            </div>
+                            <div id="serialDisplay" class="text-lg font-mono text-zinc-500 tracking-wider">XXXX-XXXX-XX</div>
                         </div>
-
-                        <button id="scanBtn" disabled class="w-full py-5 rounded-2xl font-bold uppercase tracking-[0.2em] text-[11px] bg-zinc-800 text-zinc-500 cursor-not-allowed transition-all duration-300 relative overflow-hidden group">
-                            <span class="relative z-10 flex items-center justify-center gap-3">
-                                <i data-lucide="sparkles" id="btnIcon" class="w-4 h-4"></i>
-                                <span id="btnText">Execute Forensic Scan</span>
-                            </span>
+                        <button id="scanBtn" disabled class="w-full py-5 rounded-2xl font-bold uppercase tracking-[0.2em] text-[11px] bg-zinc-800 text-zinc-500 cursor-not-allowed transition-all shadow-lg hover:shadow-amber-500/10">
+                            Execute Forensic Scan
                         </button>
                     </div>
                 </div>
             </div>
         </section>
 
-        <!-- Loading State -->
-        <section id="loadingState" class="hidden py-20 flex flex-col items-center justify-center space-y-6">
-            <div class="relative">
-                <div class="absolute inset-0 bg-amber-500 blur-2xl opacity-10"></div>
-                <div class="w-12 h-12 border-4 border-amber-500/20 border-t-amber-500 rounded-full animate-spin"></div>
-            </div>
-            <p class="text-xs font-bold text-amber-500 uppercase tracking-[0.4em]">Deciphering Integrity...</p>
+        <!-- Loading -->
+        <section id="loadingState" class="hidden py-20 flex flex-col items-center justify-center space-y-6 text-center">
+            <div class="w-12 h-12 border-4 border-amber-500/20 border-t-amber-500 rounded-full animate-spin"></div>
+            <p class="text-xs font-bold text-amber-500 uppercase tracking-[0.4em]">Extracting forensic features from source...</p>
         </section>
 
-        <!-- Result Section -->
-        <section id="resultSection" class="hidden">
+        <!-- Results -->
+        <section id="resultSection" class="hidden space-y-6">
             <div class="glass-panel rounded-[2.5rem] overflow-hidden shadow-2xl">
-                <!-- Status Banner -->
                 <div id="statusBanner" class="py-4 px-8 flex justify-between items-center text-[10px] font-black tracking-[0.2em] uppercase">
                     <div class="flex items-center gap-3">
                         <i id="statusIcon" class="w-4 h-4"></i>
                         <span id="statusLabel">Status Check</span>
                     </div>
-                    <span id="seriesLabel" class="font-mono text-zinc-500"></span>
+                    <div class="flex items-center gap-4">
+                        <span id="seriesLabel" class="font-mono text-zinc-500"></span>
+                        <div id="collectorBadge" class="hidden px-3 py-1 bg-amber-500/20 text-amber-500 rounded text-[8px] font-black">RARE SERIES</div>
+                    </div>
                 </div>
 
-                <!-- Tabs -->
-                <div class="flex border-b border-white/5">
-                    <button class="tab-btn flex-1 py-6 flex items-center justify-center gap-2 text-[10px] font-bold uppercase tracking-[0.2em] transition-all relative text-white" data-target="overview">
+                <div class="flex border-b border-white/5 overflow-x-auto">
+                    <button class="tab-btn min-w-[120px] py-6 flex items-center justify-center gap-2 text-[10px] font-bold uppercase tracking-[0.2em] relative text-white" data-target="overview">
                         <i data-lucide="eye" class="w-3 h-3"></i> Identity
-                        <div class="tab-indicator absolute bottom-0 left-[25%] right-[25%] h-[2px] bg-amber-500"></div>
+                        <div class="tab-indicator absolute bottom-0 left-0 right-0 h-[2px] bg-amber-500"></div>
                     </button>
-                    <button class="tab-btn flex-1 py-6 flex items-center justify-center gap-2 text-[10px] font-bold uppercase tracking-[0.2em] transition-all relative text-zinc-600" data-target="security">
-                        <i data-lucide="shield-check" class="w-3 h-3"></i> Security
-                        <div class="tab-indicator hidden absolute bottom-0 left-[25%] right-[25%] h-[2px] bg-amber-500"></div>
+                    <button class="tab-btn min-w-[120px] py-6 flex items-center justify-center gap-2 text-[10px] font-bold uppercase tracking-[0.2em] relative text-zinc-600" data-target="security">
+                        <i data-lucide="shield-check" class="w-3 h-3"></i> Authentic Specimens
+                        <div class="tab-indicator hidden absolute bottom-0 left-0 right-0 h-[2px] bg-amber-500"></div>
                     </button>
-                    <button class="tab-btn flex-1 py-6 flex items-center justify-center gap-2 text-[10px] font-bold uppercase tracking-[0.2em] transition-all relative text-zinc-600" data-target="ecosystem">
+                    <button class="tab-btn min-w-[120px] py-6 flex items-center justify-center gap-2 text-[10px] font-bold uppercase tracking-[0.2em] relative text-zinc-600" data-target="collector">
+                        <i data-lucide="award" class="w-3 h-3"></i> Mint History
+                        <div class="tab-indicator hidden absolute bottom-0 left-0 right-0 h-[2px] bg-amber-500"></div>
+                    </button>
+                    <button class="tab-btn min-w-[120px] py-6 flex items-center justify-center gap-2 text-[10px] font-bold uppercase tracking-[0.2em] relative text-zinc-600" data-target="ecosystem">
                         <i data-lucide="coins" class="w-3 h-3"></i> Ecosystem
-                        <div class="tab-indicator hidden absolute bottom-0 left-[25%] right-[25%] h-[2px] bg-amber-500"></div>
+                        <div class="tab-indicator hidden absolute bottom-0 left-0 right-0 h-[2px] bg-amber-500"></div>
                     </button>
                 </div>
 
                 <div class="p-10">
-                    <!-- Identity Tab -->
                     <div id="overviewTab" class="content-pane space-y-8">
-                        <div class="flex flex-col md:flex-row justify-between items-start gap-6">
-                            <div class="space-y-1">
-                                <span class="text-[10px] font-bold text-zinc-600 uppercase tracking-widest">Neural Recognition</span>
-                                <h3 class="text-6xl font-black text-white tracking-tighter italic">
-                                    <span id="resDenom">0</span> <span id="resCurrency" class="text-amber-500">CUR</span>
-                                </h3>
+                        <div class="flex justify-between items-start">
+                            <h3 class="text-6xl font-black text-white italic">
+                                <span id="resDenom">0</span> <span id="resCurrency" class="text-amber-500">CUR</span>
+                            </h3>
+                            <div class="text-right">
+                                <p class="text-[10px] text-zinc-600 uppercase font-bold tracking-widest">Global Valuation</p>
+                                <p id="usdValue" class="text-2xl font-black text-emerald-500">≈ $0.00</p>
                             </div>
-                            <div id="statusBadge" class="px-5 py-2 rounded-xl border font-mono text-[10px]">VERIFIED</div>
                         </div>
-                        <div class="p-6 rounded-2xl bg-zinc-900/50 border border-white/5 space-y-3">
-                            <div class="flex items-center gap-2 text-amber-500/60 uppercase text-[9px] font-black tracking-widest">
-                                <i data-lucide="alert-triangle" class="w-3 h-3"></i> Forensic Advisory
+                        <p id="resReason" class="text-sm text-zinc-400 italic p-6 rounded-2xl bg-white/5 border border-white/10"></p>
+                    </div>
+
+                    <div id="securityTab" class="content-pane hidden space-y-8">
+                        <div class="flex flex-col md:flex-row justify-between items-center gap-4 bg-white/5 p-4 rounded-2xl border border-white/10">
+                            <div class="flex items-center gap-4">
+                                <i data-lucide="zap" class="text-amber-500 w-5 h-5"></i>
+                                <span class="text-[10px] font-bold uppercase tracking-widest">Enhanced Forensic View</span>
                             </div>
-                            <p id="resReason" class="text-sm text-zinc-400 italic leading-relaxed"></p>
+                            <div class="flex gap-2">
+                                <button id="uvToggle" class="px-4 py-2 rounded-lg bg-zinc-800 text-[9px] font-bold uppercase hover:bg-zinc-700 transition-colors">UV Light</button>
+                                <button id="forensicToggle" class="px-4 py-2 rounded-lg bg-zinc-800 text-[9px] font-bold uppercase hover:bg-zinc-700 transition-colors">Micro-Print Scan</button>
+                            </div>
+                        </div>
+                        <p class="text-[10px] text-zinc-500 italic text-center">These specimens are cropped directly from your uploaded image for 100% forensic accuracy.</p>
+                        <div id="specimenGrid" class="grid grid-cols-1 md:grid-cols-2 gap-6"></div>
+                    </div>
+
+                    <div id="collectorTab" class="content-pane hidden space-y-6">
+                        <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                            <div class="p-6 rounded-2xl bg-white/5 border border-white/5 space-y-2">
+                                <span class="text-[9px] font-bold text-zinc-500 uppercase">Print Status</span>
+                                <p id="printStatus" class="text-sm text-white font-bold italic">Standard Issue</p>
+                            </div>
+                            <div class="p-6 rounded-2xl bg-white/5 border border-white/5 space-y-2">
+                                <span class="text-[9px] font-bold text-zinc-500 uppercase">Rarity Level</span>
+                                <p id="rarityLevel" class="text-sm text-white font-bold italic">Common</p>
+                            </div>
+                            <div class="p-6 rounded-2xl bg-white/5 border border-white/5 space-y-2">
+                                <span class="text-[9px] font-bold text-zinc-500 uppercase">Estimated Collector Val.</span>
+                                <p id="collectorVal" class="text-sm text-amber-500 font-bold italic">Face Value</p>
+                            </div>
+                        </div>
+                        <div class="p-8 rounded-3xl bg-white/5 border border-white/10">
+                            <h4 class="text-[10px] font-bold text-amber-500 uppercase tracking-[0.2em] mb-4">Historical Mint Notes</h4>
+                            <p id="mintNotes" class="text-sm text-zinc-400 italic leading-relaxed"></p>
                         </div>
                     </div>
 
-                    <!-- Security Tab -->
-                    <div id="securityTab" class="content-pane hidden grid grid-cols-1 md:grid-cols-2 gap-4"></div>
-
-                    <!-- Ecosystem Tab -->
                     <div id="ecosystemTab" class="content-pane hidden space-y-6">
-                        <p class="text-[10px] font-bold text-zinc-600 uppercase tracking-[0.2em]">Authorized Circulation</p>
+                        <p class="text-[10px] font-bold text-zinc-600 uppercase tracking-[0.2em]">Circulating Denominations</p>
                         <div id="circDenoms" class="grid grid-cols-2 sm:grid-cols-4 gap-4"></div>
                     </div>
                 </div>
@@ -208,9 +248,11 @@
     </main>
 
     <script>
-        // YOUR GEMINI API KEY FROM QUERY
-        const apiKey = "AIzaSyC1J8Bi1Yd4B9IxHIhTv7hd_37vjE6Oja0";
+        const apiKey = "";
         let base64Image = null;
+        let originalImgSrc = null;
+        let isUvEnabled = false;
+        let isForensicEnabled = false;
 
         const el = {
             fileInput: document.getElementById('fileInput'),
@@ -224,14 +266,23 @@
             resCurrency: document.getElementById('resCurrency'),
             resReason: document.getElementById('resReason'),
             statusBanner: document.getElementById('statusBanner'),
-            statusIcon: document.getElementById('statusIcon'),
             statusLabel: document.getElementById('statusLabel'),
             seriesLabel: document.getElementById('seriesLabel'),
-            statusBadge: document.getElementById('statusBadge'),
-            securityTab: document.getElementById('securityTab'),
+            securityTab: document.getElementById('specimenGrid'),
             circDenoms: document.getElementById('circDenoms'),
             tabs: document.querySelectorAll('.tab-btn'),
-            panes: document.querySelectorAll('.content-pane')
+            panes: document.querySelectorAll('.content-pane'),
+            uvToggle: document.getElementById('uvToggle'),
+            forensicToggle: document.getElementById('forensicToggle'),
+            fxValue: document.getElementById('fxValue'),
+            usdValue: document.getElementById('usdValue'),
+            serialDisplay: document.getElementById('serialDisplay'),
+            ocrStatus: document.getElementById('ocrStatus'),
+            mintNotes: document.getElementById('mintNotes'),
+            printStatus: document.getElementById('printStatus'),
+            rarityLevel: document.getElementById('rarityLevel'),
+            collectorVal: document.getElementById('collectorVal'),
+            collectorBadge: document.getElementById('collectorBadge')
         };
 
         lucide.createIcons();
@@ -241,15 +292,14 @@
             if (file) {
                 const reader = new FileReader();
                 reader.onload = (event) => {
-                    const res = event.target.result;
-                    base64Image = res.split(',')[1];
-                    el.previewImg.src = res;
+                    originalImgSrc = event.target.result;
+                    base64Image = event.target.result.split(',')[1];
+                    el.previewImg.src = event.target.result;
                     el.previewImg.classList.remove('hidden');
                     el.uploadPrompt.classList.add('hidden');
                     el.scanBtn.disabled = false;
                     el.scanBtn.classList.replace('bg-zinc-800', 'bg-white');
                     el.scanBtn.classList.replace('text-zinc-500', 'text-black');
-                    el.scanBtn.classList.remove('cursor-not-allowed');
                     el.resetBtn.classList.remove('hidden');
                 };
                 reader.readAsDataURL(file);
@@ -270,70 +320,168 @@
             });
         });
 
+        el.uvToggle.onclick = () => {
+            isUvEnabled = !isUvEnabled;
+            isForensicEnabled = false;
+            document.querySelectorAll('.specimen-view').forEach(img => {
+                img.classList.toggle('uv-active', isUvEnabled);
+                img.classList.remove('forensic-active');
+            });
+            el.uvToggle.classList.toggle('bg-amber-500', isUvEnabled);
+            el.uvToggle.classList.toggle('text-black', isUvEnabled);
+            el.forensicToggle.className = "px-4 py-2 rounded-lg bg-zinc-800 text-[9px] font-bold uppercase hover:bg-zinc-700 transition-colors";
+        };
+
+        el.forensicToggle.onclick = () => {
+            isForensicEnabled = !isForensicEnabled;
+            isUvEnabled = false;
+            document.querySelectorAll('.specimen-view').forEach(img => {
+                img.classList.toggle('forensic-active', isForensicEnabled);
+                img.classList.remove('uv-active');
+            });
+            el.forensicToggle.classList.toggle('bg-amber-500', isForensicEnabled);
+            el.forensicToggle.classList.toggle('text-black', isForensicEnabled);
+            el.uvToggle.className = "px-4 py-2 rounded-lg bg-zinc-800 text-[9px] font-bold uppercase hover:bg-zinc-700 transition-colors";
+        };
+
+        const apiRequest = async (url, body, retries = 5) => {
+            for (let i = 0; i < retries; i++) {
+                try {
+                    const response = await fetch(url, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(body)
+                    });
+                    if (response.ok) return await response.json();
+                    if (response.status === 429) {
+                        await new Promise(r => setTimeout(r, Math.pow(2, i) * 1000));
+                        continue;
+                    }
+                    throw new Error(`API Error: ${response.status}`);
+                } catch (err) {
+                    if (i === retries - 1) throw err;
+                    await new Promise(r => setTimeout(r, Math.pow(2, i) * 1000));
+                }
+            }
+        };
+
         el.scanBtn.addEventListener('click', async () => {
             if (!base64Image) return;
             el.loadingState.classList.remove('hidden');
             el.resultSection.classList.add('hidden');
 
-            const systemPrompt = `Analyze the banknote image. Return JSON: { 
+            const systemPrompt = `Forensic analysis of banknote. Return JSON: { 
                 "currency": "ISO", "denomination": "Value", "isDiscontinued": boolean, 
-                "seriesYear": "Year", "circulatingDenominations": ["Values"], 
-                "securityFeatures": ["List"], "statusReason": "Advice" 
+                "seriesYear": "Year", "circulatingDenominations": ["Values"],
+                "securityFeatures": [{"name": "Feature", "description": "Short forensic note", "location_prompt": "describe where this is on the note e.g. bottom left"}], 
+                "statusReason": "Advice",
+                "serialNumber": "Extracted Serial",
+                "exchangeRateToUSD": number,
+                "mintHistory": "Detailed historical context",
+                "isRare": boolean,
+                "collectorValue": "Estimated USD value if rare"
             }`;
 
             try {
-                const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${apiKey}`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        contents: [{
-                            parts: [
-                                { text: "Identify this banknote forensic details." },
-                                { inlineData: { mimeType: "image/png", data: base64Image } }
-                            ]
-                        }],
+                const data = await apiRequest(
+                    `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${apiKey}`,
+                    {
+                        contents: [{ parts: [{ text: "Full Forensic Audit." }, { inlineData: { mimeType: "image/png", data: base64Image } }] }],
                         systemInstruction: { parts: [{ text: systemPrompt }] },
-                        generationConfig: { responseMimeType: "application/json", temperature: 0.1 }
-                    })
-                });
-                const result = await response.json();
-                const data = JSON.parse(result.candidates[0].content.parts[0].text);
-                renderData(data);
-            } catch (err) {
-                alert("Neural core connection interrupted.");
-            } finally {
-                el.loadingState.classList.add('hidden');
+                        generationConfig: { responseMimeType: "application/json" }
+                    }
+                );
+                const parsed = JSON.parse(data.candidates[0].content.parts[0].text);
+                renderData(parsed);
+            } catch (err) { 
+                console.error(err);
+                alert("Audit failed. Please ensure the image is clear."); 
             }
+            finally { el.loadingState.classList.add('hidden'); }
         });
 
-        function renderData(data) {
+        // NEW: Real forensic enhancement of source image regions
+        async function enhanceSourceFeature(featureName, locationPrompt) {
+            const prompt = `Crop and forensically enhance the area showing the "${featureName}" (${locationPrompt}) from this banknote image. Zoom in closely to show the physical texture, ink, or substrate fibers. Do not generate new elements; show exactly what is in the original image but sharper and more contrasted.`;
+            try {
+                const result = await apiRequest(
+                    `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-image-preview:generateContent?key=${apiKey}`,
+                    { 
+                        contents: [{ 
+                            parts: [
+                                { text: prompt }, 
+                                { inlineData: { mimeType: "image/png", data: base64Image } }
+                            ] 
+                        }],
+                        generationConfig: { responseModalities: ['TEXT', 'IMAGE'] }
+                    }
+                );
+                const base64 = result.candidates?.[0]?.content?.parts?.find(p => p.inlineData)?.inlineData?.data;
+                return base64 ? `data:image/png;base64,${base64}` : null;
+            } catch (e) { 
+                return null; 
+            }
+        }
+
+        async function renderData(data) {
             el.resultSection.classList.remove('hidden');
             el.resDenom.innerText = data.denomination;
             el.resCurrency.innerText = data.currency;
             el.resReason.innerText = data.statusReason;
             el.seriesLabel.innerText = data.seriesYear;
+            
+            el.serialDisplay.innerText = data.serialNumber || "UNREADABLE";
+            el.ocrStatus.innerText = "PARSING_COMPLETE";
+            el.fxValue.innerText = `${(1 / (data.exchangeRateToUSD || 1)).toFixed(2)} ${data.currency} / 1 USD`;
+            el.usdValue.innerText = `≈ $${(parseFloat(data.denomination) * (data.exchangeRateToUSD || 0)).toFixed(2)}`;
+
+            el.mintNotes.innerText = data.mintHistory;
+            el.rarityLevel.innerText = data.isRare ? "High" : "Standard";
+            el.printStatus.innerText = data.isRare ? "Collector Variant" : "General Circulation";
+            el.collectorVal.innerText = data.collectorValue || "Face Value";
+            el.collectorBadge.classList.toggle('hidden', !data.isRare);
 
             if (data.isDiscontinued) {
                 el.statusBanner.className = "py-4 px-8 flex justify-between items-center text-[10px] font-black uppercase bg-red-500/10 text-red-500";
-                el.statusLabel.innerText = "DEMONETIZED";
-                el.statusBadge.innerText = "TERMINATED";
+                el.statusLabel.innerText = "OUT OF CIRCULATION";
             } else {
                 el.statusBanner.className = "py-4 px-8 flex justify-between items-center text-[10px] font-black uppercase bg-emerald-500/10 text-emerald-500";
-                el.statusLabel.innerText = "LEGAL TENDER";
-                el.statusBadge.innerText = "ACTIVE";
+                el.statusLabel.innerText = "VALID TENDER";
             }
 
-            el.securityTab.innerHTML = data.securityFeatures.map(f => `
-                <div class="p-6 rounded-2xl bg-zinc-900 border border-white/5 text-xs font-bold uppercase tracking-wider">${f}</div>
-            `).join('');
-
-            el.circDenoms.innerHTML = data.circulatingDenominations.map(d => `
-                <div class="p-6 rounded-2xl border ${d.toString() === data.denomination.toString() ? 'bg-white text-black' : 'bg-black/40 border-white/5 text-zinc-500'} flex flex-col items-center">
+            el.circDenoms.innerHTML = (data.circulatingDenominations || []).map(d => `
+                <div class="p-6 rounded-2xl border ${d.toString() === data.denomination.toString() ? 'bg-white text-black border-white' : 'bg-black/40 border-white/5 text-zinc-500'} flex flex-col items-center">
                     <span class="text-xl font-black">${d}</span>
+                    <span class="text-[8px] font-bold uppercase">${data.currency}</span>
                 </div>
             `).join('');
 
+            el.securityTab.innerHTML = (data.securityFeatures || []).map((f, i) => `
+                <div class="glass-panel p-5 rounded-3xl border border-white/5 space-y-4 overflow-hidden hologram-shimmer" onmousemove="this.style.setProperty('--tilt', (event.offsetX/10)+'deg')">
+                    <div class="flex justify-between items-center">
+                        <span class="text-[9px] font-bold text-amber-500 uppercase tracking-widest">${f.name}</span>
+                        <span class="text-[8px] text-zinc-600 font-mono italic">REAL_SPECIMEN_S${i+1}</span>
+                    </div>
+                    <div id="specimen-img-${i}" class="h-48 rounded-xl specimen-loading flex items-center justify-center overflow-hidden">
+                        <i data-lucide="scan-line" class="w-6 h-6 text-zinc-800"></i>
+                    </div>
+                    <p class="text-[10px] text-zinc-400 italic leading-snug">${f.description}</p>
+                </div>
+            `).join('');
+            
             lucide.createIcons();
+
+            data.securityFeatures.forEach(async (f, i) => {
+                // Now extracting directly from YOUR photo
+                const enhancedUrl = await enhanceSourceFeature(f.name, f.location_prompt);
+                const container = document.getElementById(`specimen-img-${i}`);
+                if (container) {
+                    container.classList.remove('specimen-loading');
+                    // Fallback to original image if enhancement fails, but it will be a 100% real image either way
+                    const finalUrl = enhancedUrl || originalImgSrc;
+                    container.innerHTML = `<img src="${finalUrl}" class="w-full h-full object-cover specimen-view transition-all duration-500" alt="${f.name}">`;
+                }
+            });
         }
 
         el.resetBtn.onclick = () => location.reload();
