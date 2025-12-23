@@ -41,13 +41,11 @@
         }
         .tab-indicator { transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1); }
         
-        /* Forensic UV Filter */
         .uv-active {
             filter: contrast(1.8) saturate(2.5) hue-rotate(275deg) brightness(0.7) invert(0.05);
             box-shadow: 0 0 50px rgba(138, 43, 226, 0.5);
         }
 
-        /* Micro-Print Enhancement Filter */
         .forensic-active {
             filter: contrast(2) grayscale(1) brightness(1.2) sharpness(1.5);
         }
@@ -146,20 +144,13 @@
                         </button>
                     </div>
                 </div>
-                
-                <div class="mt-6 flex items-start gap-4 p-4 bg-amber-500/5 rounded-xl border border-amber-500/10">
-                    <i data-lucide="info" class="w-4 h-4 text-amber-500 mt-0.5"></i>
-                    <p class="text-[10px] text-zinc-400 leading-relaxed">
-                        <span class="text-amber-500 font-bold uppercase">Pro Tip:</span> For best results, place the note on a dark, flat surface with natural lighting. Avoid heavy shadows or glares on the holographic strips.
-                    </p>
-                </div>
             </div>
         </section>
 
         <!-- Loading -->
         <section id="loadingState" class="hidden py-20 flex flex-col items-center justify-center space-y-6 text-center">
             <div class="w-12 h-12 border-4 border-amber-500/20 border-t-amber-500 rounded-full animate-spin"></div>
-            <p class="text-xs font-bold text-amber-500 uppercase tracking-[0.4em]">Calibrating Forensic Neural Engine...</p>
+            <p id="loadingText" class="text-xs font-bold text-amber-500 uppercase tracking-[0.4em]">Calibrating Forensic Neural Engine...</p>
         </section>
 
         <!-- Results -->
@@ -252,12 +243,7 @@
                     </div>
 
                     <div id="ecosystemTab" class="content-pane hidden space-y-6">
-                        <div class="flex items-center gap-3 mb-4">
-                            <i data-lucide="layers" class="text-amber-500 w-4 h-4"></i>
-                            <h4 class="text-[10px] font-bold text-zinc-600 uppercase tracking-[0.2em]">Other Circulating Denominations</h4>
-                        </div>
                         <div id="circDenoms" class="grid grid-cols-2 sm:grid-cols-4 gap-4"></div>
-                        <p class="text-[9px] text-zinc-500 italic mt-6">* Ecosystem view shows official active tender variants for this currency family.</p>
                     </div>
                 </div>
             </div>
@@ -268,8 +254,6 @@
         const apiKey = "";
         let base64Image = null;
         let originalImgSrc = null;
-        let isUvEnabled = false;
-        let isForensicEnabled = false;
 
         const el = {
             fileInput: document.getElementById('fileInput'),
@@ -278,6 +262,7 @@
             scanBtn: document.getElementById('scanBtn'),
             resetBtn: document.getElementById('resetBtn'),
             loadingState: document.getElementById('loadingState'),
+            loadingText: document.getElementById('loadingText'),
             resultSection: document.getElementById('resultSection'),
             resDenom: document.getElementById('resDenom'),
             resCurrency: document.getElementById('resCurrency'),
@@ -338,30 +323,6 @@
             });
         });
 
-        el.uvToggle.onclick = () => {
-            isUvEnabled = !isUvEnabled;
-            isForensicEnabled = false;
-            document.querySelectorAll('.specimen-view').forEach(img => {
-                img.classList.toggle('uv-active', isUvEnabled);
-                img.classList.remove('forensic-active');
-            });
-            el.uvToggle.classList.toggle('bg-amber-500', isUvEnabled);
-            el.uvToggle.classList.toggle('text-black', isUvEnabled);
-            el.forensicToggle.className = "px-4 py-2 rounded-lg bg-zinc-800 text-[9px] font-bold uppercase hover:bg-zinc-700 transition-colors";
-        };
-
-        el.forensicToggle.onclick = () => {
-            isForensicEnabled = !isForensicEnabled;
-            isUvEnabled = false;
-            document.querySelectorAll('.specimen-view').forEach(img => {
-                img.classList.toggle('forensic-active', isForensicEnabled);
-                img.classList.remove('uv-active');
-            });
-            el.forensicToggle.classList.toggle('bg-amber-500', isForensicEnabled);
-            el.forensicToggle.classList.toggle('text-black', isForensicEnabled);
-            el.uvToggle.className = "px-4 py-2 rounded-lg bg-zinc-800 text-[9px] font-bold uppercase hover:bg-zinc-700 transition-colors";
-        };
-
         const apiRequest = async (url, body, retries = 5) => {
             for (let i = 0; i < retries; i++) {
                 try {
@@ -370,12 +331,19 @@
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify(body)
                     });
-                    if (response.ok) return await response.json();
+                    const data = await response.json();
+                    if (response.ok) return data;
+                    
+                    // Specific handling for safety blocks
+                    if (data.candidates?.[0]?.finishReason === "SAFETY") {
+                        throw new Error("SAFETY_BLOCK");
+                    }
+
                     if (response.status === 429) {
                         await new Promise(r => setTimeout(r, Math.pow(2, i) * 1000));
                         continue;
                     }
-                    throw new Error(`API Error: ${response.status}`);
+                    throw new Error(`HTTP ${response.status}`);
                 } catch (err) {
                     if (i === retries - 1) throw err;
                     await new Promise(r => setTimeout(r, Math.pow(2, i) * 1000));
@@ -388,24 +356,27 @@
             el.loadingState.classList.remove('hidden');
             el.resultSection.classList.add('hidden');
             el.qualityWarning.classList.add('hidden');
+            el.loadingText.innerText = "Analyzing security substrate...";
 
-            const systemPrompt = `Analyze this banknote forensic scan. 
-            Identify the denomination (numeric value) and currency ISO code. 
-            EVEN IF THE IMAGE IS SLIGHTLY BLURRY, attempt to identify visible patterns.
-            
-            Return JSON: { 
-                "currency": "ISO Code", 
-                "denomination": "Numeric Value", 
-                "isDiscontinued": boolean, 
-                "seriesYear": "Year/Series", 
-                "circulatingDenominations": ["List of numeric values in this currency's ecosystem"],
-                "securityFeatures": [{"name": "Feature", "description": "Short forensic note", "location_prompt": "describe where this is on the note"}], 
-                "statusReason": "Advice on authenticity",
-                "serialNumber": "Serial if visible",
+            const systemPrompt = `Analyze the banknote image provided. Extract forensic data.
+            Rules:
+            1. If it's currency, identify it.
+            2. If it's not currency, state that in statusReason.
+            3. Return ONLY valid JSON.
+            JSON Structure:
+            {
+                "currency": "ISO",
+                "denomination": "number",
+                "isDiscontinued": boolean,
+                "seriesYear": "year",
+                "circulatingDenominations": [numbers],
+                "securityFeatures": [{"name": "string", "description": "string", "location_prompt": "string"}],
+                "statusReason": "Forensic audit details",
+                "serialNumber": "OCR result",
                 "exchangeRateToUSD": number,
                 "mintHistory": "Historical context",
                 "isRare": boolean,
-                "collectorValue": "Value in USD",
+                "collectorValue": "string",
                 "lowConfidence": boolean
             }`;
 
@@ -413,66 +384,67 @@
                 const data = await apiRequest(
                     `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${apiKey}`,
                     {
-                        contents: [{ parts: [{ text: "Forensic analysis of this note." }, { inlineData: { mimeType: "image/png", data: base64Image } }] }],
+                        contents: [{ parts: [{ text: "Examine this specimen for denomination and authenticity." }, { inlineData: { mimeType: "image/png", data: base64Image } }] }],
                         systemInstruction: { parts: [{ text: systemPrompt }] },
-                        generationConfig: { responseMimeType: "application/json" }
+                        generationConfig: { 
+                            responseMimeType: "application/json",
+                            temperature: 0.1
+                        },
+                        // Relax safety filters which often block currency images in API mode
+                        safetySettings: [
+                            { category: "HARM_CATEGORY_HARASSMENT", threshold: "BLOCK_NONE" },
+                            { category: "HARM_CATEGORY_HATE_SPEECH", threshold: "BLOCK_NONE" },
+                            { category: "HARM_CATEGORY_SEXUALLY_EXPLICIT", threshold: "BLOCK_NONE" },
+                            { category: "HARM_CATEGORY_DANGEROUS_CONTENT", threshold: "BLOCK_NONE" }
+                        ]
                     }
                 );
+
+                if (!data.candidates?.[0]?.content?.parts?.[0]?.text) {
+                    throw new Error("EMPTY_RESPONSE");
+                }
+
                 const textResult = data.candidates[0].content.parts[0].text;
                 const parsed = JSON.parse(textResult);
                 renderData(parsed);
             } catch (err) { 
-                console.error(err);
+                console.error("Audit Failure:", err);
                 el.loadingState.classList.add('hidden');
-                alert("Audit Engine Error. Please try a clearer photo.");
+                
+                if (err.message === "SAFETY_BLOCK") {
+                    el.loadingText.innerText = "Safety Filter Intercept. Please ensure image contains no sensitive info.";
+                } else {
+                    el.loadingText.innerText = "Audit Failure. Retrying with low-latency mode...";
+                    setTimeout(() => el.scanBtn.click(), 2000);
+                }
+            } finally {
+                el.loadingState.classList.add('hidden');
             }
-            finally { el.loadingState.classList.add('hidden'); }
         });
-
-        async function enhanceSourceFeature(featureName, locationPrompt) {
-            const prompt = `From this banknote, crop the "${featureName}" at "${locationPrompt}". Respond only with the image.`;
-            try {
-                const result = await apiRequest(
-                    `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-image-preview:generateContent?key=${apiKey}`,
-                    { 
-                        contents: [{ parts: [{ text: prompt }, { inlineData: { mimeType: "image/png", data: base64Image } }] }],
-                        generationConfig: { responseModalities: ['TEXT', 'IMAGE'] }
-                    }
-                );
-                const base64 = result.candidates?.[0]?.content?.parts?.find(p => p.inlineData)?.inlineData?.data;
-                return base64 ? `data:image/png;base64,${base64}` : null;
-            } catch (e) { return null; }
-        }
 
         async function renderData(data) {
             el.resultSection.classList.remove('hidden');
-            el.resDenom.innerText = data.denomination;
-            el.resCurrency.innerText = data.currency;
-            el.resReason.innerText = data.statusReason;
-            el.seriesLabel.innerText = data.seriesYear;
+            el.resDenom.innerText = data.denomination || "0";
+            el.resCurrency.innerText = data.currency || "???";
+            el.resReason.innerText = data.statusReason || "Identification incomplete.";
+            el.seriesLabel.innerText = data.seriesYear || "Unknown Series";
             
             if (data.lowConfidence) el.qualityWarning.classList.remove('hidden');
 
             el.serialDisplay.innerText = data.serialNumber || "UNREADABLE";
-            el.ocrStatus.innerText = "PARSED";
+            el.ocrStatus.innerText = "AUDIT_PARSED";
             el.fxValue.innerText = `${(1 / (data.exchangeRateToUSD || 1)).toFixed(2)} ${data.currency} / 1 USD`;
-            el.usdValue.innerText = `≈ $${(parseFloat(data.denomination) * (data.exchangeRateToUSD || 0)).toFixed(2)}`;
+            el.usdValue.innerText = `≈ $${(parseFloat(data.denomination || 0) * (data.exchangeRateToUSD || 0)).toFixed(2)}`;
 
-            el.mintNotes.innerText = data.mintHistory;
+            el.mintNotes.innerText = data.mintHistory || "No historical context available.";
             el.rarityLevel.innerText = data.isRare ? "High" : "Standard";
-            el.printStatus.innerText = data.isRare ? "Rare/Variant" : "General";
+            el.printStatus.innerText = data.isRare ? "Collector Asset" : "Legal Tender";
             el.collectorVal.innerText = data.collectorValue || "Face Value";
             el.collectorBadge.classList.toggle('hidden', !data.isRare);
 
-            if (data.isDiscontinued) {
-                el.statusBanner.className = "py-4 px-8 flex justify-between items-center text-[10px] font-black uppercase bg-red-500/10 text-red-500";
-                el.statusLabel.innerText = "OUT OF CIRCULATION";
-            } else {
-                el.statusBanner.className = "py-4 px-8 flex justify-between items-center text-[10px] font-black uppercase bg-emerald-500/10 text-emerald-500";
-                el.statusLabel.innerText = "VALID TENDER";
-            }
+            el.statusBanner.className = `py-4 px-8 flex justify-between items-center text-[10px] font-black uppercase ${data.isDiscontinued ? 'bg-red-500/10 text-red-500' : 'bg-emerald-500/10 text-emerald-500'}`;
+            el.statusLabel.innerText = data.isDiscontinued ? "OUT OF CIRCULATION" : "VALID TENDER";
 
-            // Ecosystem Tab logic
             el.circDenoms.innerHTML = (data.circulatingDenominations || []).map(d => `
                 <div class="p-6 rounded-2xl border ${d.toString() === data.denomination.toString() ? 'bg-amber-500 text-black border-amber-500' : 'bg-black/40 border-white/5 text-zinc-500'} flex flex-col items-center">
                     <span class="text-xl font-black">${d}</span>
@@ -481,10 +453,10 @@
             `).join('');
 
             el.securityTab.innerHTML = (data.securityFeatures || []).map((f, i) => `
-                <div class="glass-panel p-5 rounded-3xl border border-white/5 space-y-4 overflow-hidden hologram-shimmer">
+                <div class="glass-panel p-5 rounded-3xl border border-white/5 space-y-4">
                     <div class="flex justify-between items-center">
                         <span class="text-[9px] font-bold text-amber-500 uppercase tracking-widest">${f.name}</span>
-                        <span class="text-[8px] text-zinc-600 font-mono italic">REAL_S${i+1}</span>
+                        <span class="text-[8px] text-zinc-600 font-mono italic">S${i+1}</span>
                     </div>
                     <div id="specimen-img-${i}" class="h-48 rounded-xl specimen-loading flex items-center justify-center overflow-hidden">
                         <i data-lucide="scan-line" class="w-6 h-6 text-zinc-800"></i>
@@ -496,12 +468,23 @@
             lucide.createIcons();
 
             data.securityFeatures.forEach(async (f, i) => {
-                const enhancedUrl = await enhanceSourceFeature(f.name, f.location_prompt);
-                const container = document.getElementById(`specimen-img-${i}`);
-                if (container) {
-                    container.classList.remove('specimen-loading');
-                    const finalUrl = enhancedUrl || originalImgSrc;
-                    container.innerHTML = `<img src="${finalUrl}" class="w-full h-full object-cover specimen-view transition-all" alt="${f.name}">`;
+                const prompt = `Identify and crop the "${f.name}" at "${f.location_prompt}". Return image.`;
+                try {
+                    const result = await apiRequest(
+                        `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-image-preview:generateContent?key=${apiKey}`,
+                        { 
+                            contents: [{ parts: [{ text: prompt }, { inlineData: { mimeType: "image/png", data: base64Image } }] }],
+                            generationConfig: { responseModalities: ['TEXT', 'IMAGE'] }
+                        }
+                    );
+                    const b64 = result.candidates?.[0]?.content?.parts?.find(p => p.inlineData)?.inlineData?.data;
+                    const container = document.getElementById(`specimen-img-${i}`);
+                    if (container) {
+                        container.classList.remove('specimen-loading');
+                        container.innerHTML = `<img src="${b64 ? 'data:image/png;base64,'+b64 : originalImgSrc}" class="w-full h-full object-cover">`;
+                    }
+                } catch (e) {
+                    document.getElementById(`specimen-img-${i}`).classList.remove('specimen-loading');
                 }
             });
         }
