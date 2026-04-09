@@ -1,3 +1,4 @@
+```html
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -11,8 +12,6 @@
     <!-- Firebase SDKs -->
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/11.1.0/firebase-app.js";
-        import { getAnalytics } from "https://www.gstatic.com/firebasejs/11.1.0/firebase-analytics.js";
-
         const firebaseConfig = { 
             apiKey: "AIzaSyDc113ArrZa-bBCvKl-3UEwi4pIAdtwmIA", 
             authDomain: "tharavad336.firebaseapp.com", 
@@ -22,9 +21,7 @@
             appId: "1:124534840254:web:825d9c694eea1934d977ef", 
             measurementId: "G-XZ92F73DVT" 
         };
-
         const app = initializeApp(firebaseConfig);
-        const analytics = getAnalytics(app);
     </script>
 
     <style>
@@ -92,7 +89,6 @@
     </header>
 
     <main class="max-w-4xl mx-auto px-6 py-12 space-y-12">
-        <!-- Input Area -->
         <section class="relative">
             <div class="relative glass-panel rounded-[2.5rem] p-8 overflow-hidden shadow-2xl">
                 <div class="flex justify-between items-center mb-8">
@@ -124,13 +120,18 @@
             </div>
         </section>
 
-        <!-- Loading -->
         <section id="loadingState" class="hidden py-20 flex flex-col items-center justify-center space-y-6 text-center">
             <div class="w-12 h-12 border-4 border-amber-500/20 border-t-amber-500 rounded-full animate-spin"></div>
             <p class="text-xs font-bold text-amber-500 uppercase tracking-[0.4em]">Deciphering Security Layers...</p>
         </section>
 
-        <!-- Results -->
+        <section id="errorPanel" class="hidden py-10">
+            <div class="bg-red-500/10 border border-red-500/20 rounded-3xl p-6 text-center">
+                <i data-lucide="alert-circle" class="w-8 h-8 text-red-500 mx-auto mb-3"></i>
+                <p id="errorMessage" class="text-xs font-bold text-red-500 uppercase tracking-widest">Forensic failure detected.</p>
+            </div>
+        </section>
+
         <section id="resultSection" class="hidden">
             <div class="glass-panel rounded-[2.5rem] overflow-hidden shadow-2xl">
                 <div id="statusBanner" class="py-4 px-8 flex justify-between items-center text-[10px] font-black tracking-[0.2em] uppercase bg-zinc-900/50">
@@ -177,23 +178,18 @@
                             <span id="authLabel">Scanning...</span>
                         </div>
 
-                        <!-- Detected Problems / Forensic Flags -->
                         <div id="problemsSection" class="space-y-4">
                             <div class="flex items-center gap-2">
                                 <i data-lucide="search-code" class="w-3 h-3 text-zinc-500"></i>
                                 <p class="text-[10px] font-bold text-zinc-500 uppercase tracking-widest">Forensic Discrepancies</p>
                             </div>
-                            <div id="problemsList" class="grid grid-cols-1 gap-3">
-                                <!-- Problem items will go here -->
-                            </div>
+                            <div id="problemsList" class="grid grid-cols-1 gap-3"></div>
                         </div>
 
                         <p id="resReason" class="text-sm text-zinc-400 italic p-6 rounded-2xl bg-white/5 border border-white/10 leading-relaxed"></p>
                     </div>
 
-                    <div id="securityTab" class="content-pane hidden grid grid-cols-1 md:grid-cols-2 gap-6">
-                        <!-- Specimen Cards -->
-                    </div>
+                    <div id="securityTab" class="content-pane hidden grid grid-cols-1 md:grid-cols-2 gap-6"></div>
 
                     <div id="ecosystemTab" class="content-pane hidden space-y-8">
                         <div class="flex justify-between items-end">
@@ -209,9 +205,7 @@
                                 <i data-lucide="info" class="w-3 h-3"></i>
                                 <p class="text-[9px] font-bold uppercase tracking-widest">Uploaded asset is highlighted below</p>
                             </div>
-                            <div id="circDenoms" class="grid grid-cols-2 sm:grid-cols-4 gap-4">
-                                <!-- Circulating denoms will render here -->
-                            </div>
+                            <div id="circDenoms" class="grid grid-cols-2 sm:grid-cols-4 gap-4"></div>
                         </div>
 
                         <div class="p-6 rounded-3xl bg-white/5 border border-white/10">
@@ -219,7 +213,7 @@
                                 <i data-lucide="globe" class="w-4 h-4 text-amber-500"></i>
                                 <span class="text-[10px] font-black uppercase tracking-[0.2em]">Issuing Authority</span>
                             </div>
-                            <p id="ecoAuthority" class="text-xs text-zinc-400 font-medium">Identify target currency to view central bank data.</p>
+                            <p id="ecoAuthority" class="text-xs text-zinc-400 font-medium"></p>
                         </div>
                     </div>
                 </div>
@@ -228,8 +222,9 @@
     </main>
 
     <script>
-        const apiKey = "AIzaSyC1J8Bi1Yd4B9IxHIhTv7hd_37vjE6Oja0";
+        const apiKey = ""; 
         let base64Image = null;
+        let activeMimeType = "image/png";
 
         const el = {
             fileInput: document.getElementById('fileInput'),
@@ -239,6 +234,8 @@
             resetBtn: document.getElementById('resetBtn'),
             loadingState: document.getElementById('loadingState'),
             resultSection: document.getElementById('resultSection'),
+            errorPanel: document.getElementById('errorPanel'),
+            errorMessage: document.getElementById('errorMessage'),
             resDenom: document.getElementById('resDenom'),
             resCurrency: document.getElementById('resCurrency'),
             resReason: document.getElementById('resReason'),
@@ -261,9 +258,28 @@
 
         lucide.createIcons();
 
+        async function fetchWithRetry(url, options, maxRetries = 5) {
+            let delay = 1000;
+            for (let i = 0; i < maxRetries; i++) {
+                try {
+                    const response = await fetch(url, options);
+                    const data = await response.json();
+                    if (response.ok) return data;
+                    if (response.status !== 429 && response.status < 500) {
+                        throw new Error(data.error?.message || "Analysis failure.");
+                    }
+                } catch (e) {
+                    if (i === maxRetries - 1) throw e;
+                }
+                await new Promise(r => setTimeout(r, delay));
+                delay *= 2;
+            }
+        }
+
         el.fileInput.addEventListener('change', (e) => {
             const file = e.target.files[0];
             if (file) {
+                activeMimeType = file.type;
                 const reader = new FileReader();
                 reader.onload = (event) => {
                     base64Image = event.target.result.split(',')[1];
@@ -274,6 +290,7 @@
                     el.scanBtn.classList.replace('bg-zinc-800', 'bg-white');
                     el.scanBtn.classList.replace('text-zinc-500', 'text-black');
                     el.resetBtn.classList.remove('hidden');
+                    el.errorPanel.classList.add('hidden');
                 };
                 reader.readAsDataURL(file);
             }
@@ -297,59 +314,51 @@
             if (!base64Image) return;
             el.loadingState.classList.remove('hidden');
             el.resultSection.classList.add('hidden');
+            el.errorPanel.classList.add('hidden');
+            el.scanBtn.disabled = true;
 
-            const systemPrompt = `Analyze the banknote. You MUST provide a market value (usdExchangeRate) even if the note is old or discontinued. ONLY return 0 if it is clearly "Play Money" or a replica. 
-            Return JSON: { 
-                "currency": "ISO", 
-                "denomination": "Numeric Value Only", 
-                "issuingAuthority": "Name of Central Bank",
-                "isAuthentic": boolean,
-                "isPlayMoney": boolean,
-                "isDiscontinued": boolean, 
-                "seriesYear": "Year", 
-                "usdExchangeRate": float (current market value of 1 unit of this currency in USD),
-                "circulatingDenominations": ["Values"],
-                "securityFeatures": [{"name": "Feature", "description": "Technical details"}], 
-                "problems": [{"type": "Severe/Warning/Minor", "description": "Issue details"}],
-                "statusReason": "Forensic analysis summary" 
-            }`;
+            const systemPrompt = `Analyze the banknote. Return JSON: { 
+                "currency": "ISO", "denomination": "Numeric", "issuingAuthority": "Bank",
+                "isAuthentic": boolean, "isPlayMoney": boolean, "isDiscontinued": boolean, 
+                "seriesYear": "Year", "usdExchangeRate": float, "circulatingDenominations": ["Values"],
+                "securityFeatures": [{"name": "Feature", "description": "Details"}], 
+                "problems": [{"type": "Severe/Warning/Minor", "description": "Details"}],
+                "statusReason": "Summary" }`;
 
             try {
-                const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${apiKey}`, {
+                const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${apiKey}`;
+                const result = await fetchWithRetry(url, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
-                        contents: [{ parts: [{ text: "Forensic audit request. Calculate precise USD value based on denomination and current market rates. Do not return 0 unless it's play money." }, { inlineData: { mimeType: "image/png", data: base64Image } }] }],
+                        contents: [{ parts: [{ text: "Examine banknote forensics and provide USD valuation." }, { inlineData: { mimeType: activeMimeType, data: base64Image } }] }],
                         systemInstruction: { parts: [{ text: systemPrompt }] },
                         generationConfig: { responseMimeType: "application/json" }
                     })
                 });
-                const result = await response.json();
-                const data = JSON.parse(result.candidates[0].content.parts[0].text);
+                
+                let text = result.candidates[0].content.parts[0].text;
+                const data = JSON.parse(text);
                 renderData(data);
             } catch (err) { 
-                console.error(err);
-                alert("Core analysis failure."); 
+                el.errorPanel.classList.remove('hidden');
+                el.errorMessage.innerText = "Neural connection unstable. Please re-submit specimen.";
+            } finally { 
+                el.loadingState.classList.add('hidden');
+                el.scanBtn.disabled = false;
             }
-            finally { el.loadingState.classList.add('hidden'); }
         });
 
-        async function generateSpecimenImage(featureName, currency, denom, detail) {
-            const prompt = `Extreme macro close-up forensic detail of ${featureName} on a ${denom} ${currency} note. High resolution, scientific imaging.`;
+        async function generateSpecimenImage(featureName, currency, denom) {
+            const prompt = `Macro close-up forensic detail of ${featureName} on a ${denom} ${currency} note. Professional laboratory lighting.`;
             try {
-                const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/imagen-4.0-generate-001:predict?key=${apiKey}`, {
+                const url = `https://generativelanguage.googleapis.com/v1beta/models/imagen-4.0-generate-001:predict?key=${apiKey}`;
+                const result = await fetchWithRetry(url, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ 
-                        instances: [{ prompt: prompt }], 
-                        parameters: { sampleCount: 1 } 
-                    })
+                    body: JSON.stringify({ instances: { prompt: prompt }, parameters: { sampleCount: 1 } })
                 });
-                const result = await response.json();
-                if (result.predictions && result.predictions[0]) {
-                    return `data:image/png;base64,${result.predictions[0].bytesBase64Encoded}`;
-                }
-                return null;
+                return `data:image/png;base64,${result.predictions[0].bytesBase64Encoded}`;
             } catch (e) { return null; }
         }
 
@@ -358,87 +367,64 @@
             el.resDenom.innerText = data.denomination;
             el.resCurrency.innerText = data.currency;
             el.resReason.innerText = data.statusReason;
-            el.seriesLabel.innerText = data.seriesYear;
+            el.seriesLabel.innerText = data.seriesYear || "N/A";
             el.ecoCurrencyLabel.innerText = data.currency;
-            el.ecoAuthority.innerText = data.issuingAuthority || "Central Bank";
+            el.ecoAuthority.innerText = data.issuingAuthority;
             
-            // AGGRESSIVE VALUATION LOGIC
             const rate = parseFloat(data.usdExchangeRate) || 0;
             const denomValue = parseFloat(data.denomination.toString().replace(/[^0-9.]/g, '')) || 0;
-            const totalUsd = (denomValue * rate).toFixed(2);
-            
-            // Only force 0 if explicitly "Play Money" or "Replica"
-            if (data.isPlayMoney === true) {
-                el.usdValue.innerText = "0.00";
-                el.exchangeRateLabel.innerText = "Non-Tender / Play Money";
-            } else {
-                el.usdValue.innerText = totalUsd;
-                el.exchangeRateLabel.innerText = `Market Rate: 1 ${data.currency} ≈ ${rate.toFixed(4)} USD`;
-            }
+            el.usdValue.innerText = data.isPlayMoney ? "0.00" : (denomValue * rate).toFixed(2);
+            el.exchangeRateLabel.innerText = data.isPlayMoney ? "Non-Tender Asset" : `1 ${data.currency} ≈ ${rate.toFixed(4)} USD`;
 
-            // UI Feedback for Authenticity
             if (data.isPlayMoney) {
                 el.authenticityBadge.className = "inline-flex items-center gap-3 px-6 py-3 rounded-full border border-red-500/20 bg-red-500/10 text-red-500 font-black text-[10px] tracking-[0.2em] uppercase glow-red";
-                el.authLabel.innerText = "NON-NEGOTIABLE / PLAY MONEY";
-                el.authIcon.setAttribute('data-lucide', 'slash');
-                el.statusLabel.innerText = "ASSET VOID";
+                el.authLabel.innerText = "NON-NEGOTIABLE";
             } else if (data.isAuthentic) {
                 el.authenticityBadge.className = "inline-flex items-center gap-3 px-6 py-3 rounded-full border border-emerald-500/20 bg-emerald-500/10 text-emerald-500 font-black text-[10px] tracking-[0.2em] uppercase glow-green";
                 el.authLabel.innerText = "AUTHENTIC TENDER";
-                el.authIcon.setAttribute('data-lucide', 'check-circle');
-                el.statusLabel.innerText = data.isDiscontinued ? "OUT OF CIRCULATION" : "VALID TENDER";
             } else {
                 el.authenticityBadge.className = "inline-flex items-center gap-3 px-6 py-3 rounded-full border border-amber-500/20 bg-amber-500/10 text-amber-500 font-black text-[10px] tracking-[0.2em] uppercase glow-amber";
-                el.authLabel.innerText = "SUSPICIOUS / UNVERIFIED";
-                el.authIcon.setAttribute('data-lucide', 'alert-triangle');
-                el.statusLabel.innerText = "CAUTION ADVISED";
+                el.authLabel.innerText = "SUSPICIOUS";
             }
 
-            // Problems Rendering
-            el.problemsList.innerHTML = (data.problems && data.problems.length > 0) ? data.problems.map(prob => `
+            el.problemsList.innerHTML = (data.problems || []).map(prob => `
                 <div class="flex items-start gap-4 p-4 rounded-2xl border border-white/5 ${prob.type === 'Severe' ? 'text-red-500 bg-red-500/5' : 'text-amber-500 bg-amber-500/5'}">
-                    <i data-lucide="${prob.type === 'Severe' ? 'x-circle' : 'alert-circle'}" class="w-4 h-4 mt-0.5"></i>
                     <div>
-                        <p class="text-[9px] font-black uppercase tracking-widest">${prob.type} ANOMALY</p>
+                        <p class="text-[9px] font-black uppercase tracking-widest">${prob.type}</p>
                         <p class="text-[11px] font-medium opacity-80 mt-1">${prob.description}</p>
                     </div>
                 </div>
-            `).join('') : `<div class="p-4 rounded-2xl border border-white/5 bg-emerald-500/5 text-emerald-500 text-[11px] font-bold uppercase tracking-widest text-center">No forensic discrepancies</div>`;
+            `).join('') || `<div class="p-4 rounded-2xl text-emerald-500 text-[11px] font-bold uppercase text-center">No forensic discrepancies</div>`;
 
-            // Ecosystem Highlighting
             el.circDenoms.innerHTML = (data.circulatingDenominations || []).map(d => {
-                const isDetected = d.toString().replace(/[^0-9.]/g, '') === data.denomination.toString().replace(/[^0-9.]/g, '');
-                return `
-                    <div class="p-6 rounded-3xl border transition-all duration-500 flex flex-col items-center justify-center relative overflow-hidden group ${isDetected ? 'active-denom' : 'bg-white/5 border-white/5 text-zinc-500 hover:border-white/10'}">
-                        ${isDetected ? '<div class="absolute top-0 right-0 p-2"><i data-lucide="scan" class="w-3 h-3"></i></div>' : ''}
-                        <span class="text-3xl font-black italic tracking-tighter">${d}</span>
-                        <span class="text-[9px] font-bold uppercase opacity-60 tracking-widest">${data.currency}</span>
-                        ${isDetected ? '<span class="mt-2 text-[8px] font-black uppercase tracking-[0.2em] bg-black text-white px-2 py-0.5 rounded">Detected</span>' : ''}
-                    </div>
-                `;
+                const isDet = d.toString().replace(/[^0-9.]/g, '') === data.denomination.toString().replace(/[^0-9.]/g, '');
+                return `<div class="p-6 rounded-3xl border ${isDet ? 'active-denom' : 'bg-white/5 border-white/5 text-zinc-500'}">
+                    <span class="text-3xl font-black italic">${d}</span>
+                </div>`;
             }).join('');
 
-            // Security Tab
             el.securityTab.innerHTML = (data.securityFeatures || []).map((f, i) => `
                 <div class="glass-panel p-5 rounded-3xl border border-white/5 space-y-4">
-                    <div class="flex justify-between items-center"><span class="text-[9px] font-bold text-amber-500 uppercase tracking-widest">${f.name}</span></div>
-                    <div id="specimen-img-${i}" class="h-48 rounded-xl specimen-loading flex items-center justify-center bg-zinc-900/50"><i data-lucide="scan" class="w-6 h-6 text-zinc-800"></i></div>
+                    <span class="text-[9px] font-bold text-amber-500 uppercase tracking-widest">${f.name}</span>
+                    <div id="specimen-${i}" class="h-48 rounded-xl specimen-loading flex items-center justify-center bg-zinc-900/50"></div>
                     <p class="text-[10px] text-zinc-400 italic leading-snug">${f.description}</p>
                 </div>
             `).join('');
             
-            lucide.createIcons();
             data.securityFeatures?.forEach(async (f, i) => {
-                const imgUrl = await generateSpecimenImage(f.name, data.currency, data.denomination, f.description);
-                const container = document.getElementById(`specimen-img-${i}`);
-                if (container && imgUrl) {
-                    container.classList.remove('specimen-loading');
-                    container.innerHTML = `<img src="${imgUrl}" class="w-full h-full object-cover rounded-xl" alt="${f.name}">`;
+                const url = await generateSpecimenImage(f.name, data.currency, data.denomination);
+                const box = document.getElementById(`specimen-${i}`);
+                if (box && url) {
+                    box.classList.remove('specimen-loading');
+                    box.innerHTML = `<img src="${url}" class="w-full h-full object-cover rounded-xl">`;
                 }
             });
+            lucide.createIcons();
         }
 
         el.resetBtn.onclick = () => location.reload();
     </script>
 </body>
 </html>
+
+```
