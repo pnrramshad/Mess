@@ -1,4 +1,3 @@
-```html
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -102,7 +101,7 @@
                 </div>
 
                 <div class="grid grid-cols-1 md:grid-cols-2 gap-8 items-center">
-                    <div id="dropZone" class="relative aspect-[4/3] rounded-3xl border-2 border-dashed border-white/5 bg-zinc-900/30 hover:border-amber-500/20 transition-all flex flex-col items-center justify-center overflow-hidden cursor-pointer">
+                    <div id="dropZone" class="relative aspect-[4/3] rounded-3xl border-2 border-dashed border-white/5 bg-zinc-900/30 hover:border-amber-500/20 transition-all flex flex-col items-center justify-center overflow-hidden">
                         <div id="uploadPrompt" class="text-center p-6 space-y-4">
                             <i data-lucide="upload" class="text-zinc-500 w-6 h-6 mx-auto"></i>
                             <p class="text-[10px] text-zinc-500 uppercase tracking-widest font-bold">Submit Asset Image</p>
@@ -112,7 +111,7 @@
                     </div>
 
                     <div class="space-y-6">
-                        <button id="scanBtn" disabled class="w-full py-5 rounded-2xl font-bold uppercase tracking-[0.2em] text-[11px] bg-zinc-800 text-zinc-500 cursor-not-allowed transition-all active:scale-[0.98]">
+                        <button id="scanBtn" disabled class="w-full py-5 rounded-2xl font-bold uppercase tracking-[0.2em] text-[11px] bg-zinc-800 text-zinc-500 cursor-not-allowed transition-all">
                             Execute Forensic Scan
                         </button>
                     </div>
@@ -143,15 +142,15 @@
                 </div>
 
                 <div class="flex border-b border-white/5 overflow-x-auto scrollbar-hide">
-                    <button class="tab-btn flex-1 min-w-[120px] py-6 flex items-center justify-center gap-2 text-[10px] font-bold uppercase tracking-[0.2em] relative text-white" data-target="overview">
+                    <button class="tab-btn flex-1 min-w-[120px] py-6 flex items-center justify-center gap-2 text-[10px] font-bold uppercase tracking-[0.2em] relative text-white" data-target="over">
                         <i data-lucide="eye" class="w-3 h-3"></i> Identity
                         <div class="tab-indicator absolute bottom-0 left-0 right-0 h-[2px] bg-amber-500"></div>
                     </button>
-                    <button class="tab-btn flex-1 min-w-[120px] py-6 flex items-center justify-center gap-2 text-[10px] font-bold uppercase tracking-[0.2em] relative text-zinc-600" data-target="security">
+                    <button class="tab-btn flex-1 min-w-[120px] py-6 flex items-center justify-center gap-2 text-[10px] font-bold uppercase tracking-[0.2em] relative text-zinc-600" data-target="sec">
                         <i data-lucide="shield-check" class="w-3 h-3"></i> Forensics
                         <div class="tab-indicator hidden absolute bottom-0 left-0 right-0 h-[2px] bg-amber-500"></div>
                     </button>
-                    <button class="tab-btn flex-1 min-w-[120px] py-6 flex items-center justify-center gap-2 text-[10px] font-bold uppercase tracking-[0.2em] relative text-zinc-600" data-target="ecosystem">
+                    <button class="tab-btn flex-1 min-w-[120px] py-6 flex items-center justify-center gap-2 text-[10px] font-bold uppercase tracking-[0.2em] relative text-zinc-600" data-target="eco">
                         <i data-lucide="layout-grid" class="w-3 h-3"></i> Ecosystem
                         <div class="tab-indicator hidden absolute bottom-0 left-0 right-0 h-[2px] bg-amber-500"></div>
                     </button>
@@ -197,7 +196,7 @@
                                 <h4 class="text-lg font-bold text-white mb-1">Currency Matrix</h4>
                                 <p class="text-[10px] font-bold text-zinc-500 uppercase tracking-widest">Global Ecosystem Verification</p>
                             </div>
-                            <div id="ecoCurrencyLabel" class="px-4 py-1.5 rounded-lg bg-amber-500/10 border border-amber-500/20 text-amber-500 text-[10px] font-black tracking-widest uppercase">---</div>
+                            <div id="ecoCurrencyLabel" class="px-4 py-1.5 rounded-lg bg-amber-500/10 border border-amber-500/20 text-amber-500 text-[10px] font-black tracking-widest uppercase">--</div>
                         </div>
                         
                         <div class="space-y-4">
@@ -222,7 +221,7 @@
     </main>
 
     <script>
-        const apiKey = ""; 
+        const apiBase = '/api'; // proxy endpoints (server must be running)
         let base64Image = null;
         let activeMimeType = "image/png";
 
@@ -326,7 +325,7 @@
                 "statusReason": "Summary" }`;
 
             try {
-                const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${apiKey}`;
+                const url = `${apiBase}/generate`;
                 const result = await fetchWithRetry(url, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
@@ -337,12 +336,13 @@
                     })
                 });
                 
-                let text = result.candidates[0].content.parts[0].text;
+                let text = result.candidates?.[0]?.content?.parts?.[0]?.text || JSON.stringify(result);
                 const data = JSON.parse(text);
                 renderData(data);
             } catch (err) { 
+                console.error(err);
                 el.errorPanel.classList.remove('hidden');
-                el.errorMessage.innerText = "Neural connection unstable. Please re-submit specimen.";
+                el.errorMessage.innerText = err?.message || "Neural connection unstable. Please re-submit specimen.";
             } finally { 
                 el.loadingState.classList.add('hidden');
                 el.scanBtn.disabled = false;
@@ -352,13 +352,13 @@
         async function generateSpecimenImage(featureName, currency, denom) {
             const prompt = `Macro close-up forensic detail of ${featureName} on a ${denom} ${currency} note. Professional laboratory lighting.`;
             try {
-                const url = `https://generativelanguage.googleapis.com/v1beta/models/imagen-4.0-generate-001:predict?key=${apiKey}`;
+                const url = `${apiBase}/imagen`;
                 const result = await fetchWithRetry(url, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ instances: { prompt: prompt }, parameters: { sampleCount: 1 } })
                 });
-                return `data:image/png;base64,${result.predictions[0].bytesBase64Encoded}`;
+                return `data:image/png;base64,${result.predictions?.[0]?.bytesBase64Encoded}`;
             } catch (e) { return null; }
         }
 
@@ -377,13 +377,13 @@
             el.exchangeRateLabel.innerText = data.isPlayMoney ? "Non-Tender Asset" : `1 ${data.currency} ≈ ${rate.toFixed(4)} USD`;
 
             if (data.isPlayMoney) {
-                el.authenticityBadge.className = "inline-flex items-center gap-3 px-6 py-3 rounded-full border border-red-500/20 bg-red-500/10 text-red-500 font-black text-[10px] tracking-[0.2em] uppercase glow-red";
+                el.authenticityBadge.className = "inline-flex items-center gap-3 px-6 py-3 rounded-full border border-red-500/20 bg-red-500/10 text-red-500 font-black text-[10px] tracking-[0.2em] uppercase";
                 el.authLabel.innerText = "NON-NEGOTIABLE";
             } else if (data.isAuthentic) {
-                el.authenticityBadge.className = "inline-flex items-center gap-3 px-6 py-3 rounded-full border border-emerald-500/20 bg-emerald-500/10 text-emerald-500 font-black text-[10px] tracking-[0.2em] uppercase glow-green";
+                el.authenticityBadge.className = "inline-flex items-center gap-3 px-6 py-3 rounded-full border border-emerald-500/20 bg-emerald-500/10 text-emerald-500 font-black text-[10px] tracking-[0.2em] uppercase";
                 el.authLabel.innerText = "AUTHENTIC TENDER";
             } else {
-                el.authenticityBadge.className = "inline-flex items-center gap-3 px-6 py-3 rounded-full border border-amber-500/20 bg-amber-500/10 text-amber-500 font-black text-[10px] tracking-[0.2em] uppercase glow-amber";
+                el.authenticityBadge.className = "inline-flex items-center gap-3 px-6 py-3 rounded-full border border-amber-500/20 bg-amber-500/10 text-amber-500 font-black text-[10px] tracking-[0.2em] uppercase";
                 el.authLabel.innerText = "SUSPICIOUS";
             }
 
@@ -426,5 +426,3 @@
     </script>
 </body>
 </html>
-
-```
