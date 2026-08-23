@@ -555,7 +555,7 @@
         }
       };
 
-      // WhatsApp & Email Share Handlers
+      // WhatsApp & Email Direct Share using Customer Profile Details & PDF Print Attachment
       const handleWhatsAppShare = (inv) => {
         const phone = inv.customer?.phone && inv.customer.phone !== 'N/A' ? inv.customer.phone.replace(/[^0-9]/g, '') : '';
         const message = `Hello ${inv.customer?.name},\nHere is your Tax Invoice (${inv.invoiceNumber}) from ${company.name}.\nGrand Total: ${inv.grandTotal.toFixed(2)} AED.\nThank you for your business!`;
@@ -1137,7 +1137,7 @@
                     <button onClick={() => setShowPrintModal(false)} className="px-3 py-1.5 bg-gray-200 rounded-lg text-xs font-bold">Close</button>
                     <button onClick={() => window.print()} className="px-4 py-1.5 bg-brand-600 text-white rounded-lg text-xs font-bold flex items-center space-x-1 shadow">
                       <i data-lucide="printer" className="w-4 h-4"></i>
-                      <span>Print A4 Invoice</span>
+                      <span>Print / PDF</span>
                     </button>
                   </div>
                 </div>
