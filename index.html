@@ -36,9 +36,8 @@
   <!-- Lucide Icons -->
   <script src="https://unpkg.com/lucide@latest"></script>
 
-  <!-- Firebase Compat Scripts (Standard Browser Compatibility) -->
+  <!-- Firebase Compatibility Scripts -->
   <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
-  <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-auth-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore-compat.js"></script>
 
   <style>
@@ -61,7 +60,7 @@
   <script type="text/babel">
     const { useState, useEffect, useMemo } = React;
 
-    // Initialize Firebase Compat
+    // Firebase Configuration for tharavad336
     const firebaseConfig = {
       apiKey: "AIzaSyDc113ArrZa-bBCvKl-3UEwi4pIAdtwmIA",
       authDomain: "tharavad336.firebaseapp.com",
@@ -76,7 +75,6 @@
       firebase.initializeApp(firebaseConfig);
     }
     const db = firebase.firestore();
-    const auth = firebase.auth();
 
     const INITIAL_PRODUCTS = [
       { id: 'p1', name: 'Premium Coffee Beans (1kg)', code: 'PRD-01', price: 85.00, vatRate: 5, stock: 42, category: 'Beverages' },
@@ -94,8 +92,6 @@
       const [theme, setTheme] = useState(localStorage.getItem('theme') || 'light');
       const [activeTab, setActiveTab] = useState('dashboard');
       const [syncStatus, setSyncStatus] = useState('Connecting...');
-      const [syncError, setSyncError] = useState('');
-      const [currentUser, setCurrentUser] = useState(null);
 
       const [company, setCompany] = useState({
         name: 'FLOURISH CAFE & TRADING LLC',
@@ -140,35 +136,9 @@
         localStorage.setItem('theme', theme);
       }, [theme]);
 
-      // Step 1: Firebase Auth initialization
+      // Direct Firebase Listener - No Auth Required
       useEffect(() => {
-        auth.signInAnonymously()
-          .then((cred) => {
-            setCurrentUser(cred.user);
-          })
-          .catch((err) => {
-            console.error("Auth error:", err);
-            setSyncStatus('Auth Failed');
-            setSyncError(err.message);
-          });
-
-        const unsubscribe = auth.onAuthStateChanged((user) => {
-          if (user) {
-            setCurrentUser(user);
-          }
-        });
-
-        return () => unsubscribe();
-      }, []);
-
-      // Step 2: Realtime Firestore Data Listener
-      useEffect(() => {
-        if (!currentUser) return;
-
-        setSyncStatus('Syncing...');
-        const collectionRef = db.collection('artifacts').doc('invoicify_app').collection('public').doc('data').collection('invoices');
-
-        const unsubscribe = collectionRef.onSnapshot(
+        const unsubscribe = db.collection('invoices').onSnapshot(
           (snapshot) => {
             const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
             if (data.length > 0) {
@@ -176,17 +146,15 @@
               localStorage.setItem('inv_invoices', JSON.stringify(data));
             }
             setSyncStatus('Cloud Connected');
-            setSyncError('');
           },
           (err) => {
-            console.error("Firestore Listen Error:", err);
-            setSyncStatus('Offline Mode');
-            setSyncError(err.message);
+            console.error("Firebase Error:", err);
+            setSyncStatus('Offline Mode (Local Storage)');
           }
         );
 
         return () => unsubscribe();
-      }, [currentUser]);
+      }, []);
 
       useEffect(() => { localStorage.setItem('inv_products', JSON.stringify(products)); }, [products]);
       useEffect(() => { localStorage.setItem('inv_customers', JSON.stringify(customers)); }, [customers]);
@@ -276,22 +244,12 @@
         const updatedInvoices = [newInvoice, ...invoices];
         setInvoices(updatedInvoices);
 
-        // Save to Firebase Cloud
-        if (currentUser) {
-          try {
-            await db.collection('artifacts')
-                    .doc('invoicify_app')
-                    .collection('public')
-                    .doc('data')
-                    .collection('invoices')
-                    .add(newInvoice);
-            console.log("Successfully saved to Cloud!");
-          } catch (e) {
-            console.error("Save to cloud failed:", e);
-            alert("Saved locally! Cloud save error: " + e.message);
-          }
-        } else {
-          alert("Saved locally! (Firebase user not signed in yet)");
+        // Save directly to Firebase Cloud
+        try {
+          await db.collection('invoices').add(newInvoice);
+          console.log("Saved to Cloud!");
+        } catch (e) {
+          console.error("Save to Cloud failed:", e);
         }
 
         setCart([]);
@@ -309,11 +267,9 @@
         const todaySales = activeInvoices
           .filter(i => i.date && i.date.startsWith(todayStr))
           .reduce((a, b) => a + (b.grandTotal || 0), 0);
-        
-        const lowStockCount = products.filter(p => p.stock <= 10).length;
 
-        return { totalRevenue, totalVat, todaySales, count: activeInvoices.length, lowStockCount };
-      }, [invoices, products]);
+        return { totalRevenue, totalVat, todaySales, count: activeInvoices.length };
+      }, [invoices]);
 
       return (
         <div className="flex flex-col md:flex-row min-h-screen">
@@ -321,12 +277,12 @@
             <div>
               <div className="p-4 border-b border-gray-200 dark:border-gray-700 flex items-center justify-between">
                 <div className="flex items-center space-x-3">
-                  <div className="w-10 h-10 rounded-xl bg-brand-600 flex items-center justify-center text-white font-bold text-lg shadow-md shadow-brand-500/30">
+                  <div className="w-10 h-10 rounded-xl bg-brand-600 flex items-center justify-center text-white font-bold text-lg shadow-md">
                     🇦🇪
                   </div>
                   <div>
                     <h1 className="font-bold text-sm leading-tight line-clamp-1">{company.name}</h1>
-                    <span className="text-xs text-gray-500 dark:text-gray-400">TRN: {company.trn}</span>
+                    <span className="text-xs text-gray-500">TRN: {company.trn}</span>
                   </div>
                 </div>
                 <button 
@@ -350,7 +306,7 @@
                     onClick={() => setActiveTab(nav.id)}
                     className={`w-full flex items-center space-x-3 px-3 py-2.5 rounded-lg font-medium text-sm transition-all ${
                       activeTab === nav.id 
-                        ? 'bg-brand-600 text-white shadow-md shadow-brand-600/20' 
+                        ? 'bg-brand-600 text-white shadow-md' 
                         : 'text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700/50'
                     }`}>
                     <i data-lucide={nav.icon} className="w-4 h-4"></i>
@@ -360,13 +316,11 @@
               </nav>
             </div>
 
-            {/* Cloud Status Panel */}
-            <div className="p-3 border-t border-gray-200 dark:border-gray-700 text-xs">
+            <div className="p-3 border-t text-xs">
               <div className="flex items-center space-x-2">
                 <span className={`w-2.5 h-2.5 rounded-full ${syncStatus === 'Cloud Connected' ? 'bg-emerald-500 animate-pulse' : 'bg-amber-500'}`}></span>
-                <span className="font-semibold text-gray-700 dark:text-gray-300">{syncStatus}</span>
+                <span className="font-semibold">{syncStatus}</span>
               </div>
-              {syncError && <div className="text-[10px] text-red-500 mt-1 truncate">{syncError}</div>}
             </div>
           </aside>
 
@@ -374,41 +328,34 @@
             {activeTab === 'dashboard' && (
               <div className="space-y-6">
                 <div className="flex items-center justify-between">
-                  <div>
-                    <h2 className="text-2xl font-bold">Sales & Revenue Dashboard</h2>
-                    <p className="text-sm text-gray-500">Real-time business performance</p>
-                  </div>
-                  <button 
-                    onClick={() => setActiveTab('pos')}
-                    className="bg-brand-600 text-white px-4 py-2 rounded-xl text-sm font-semibold flex items-center space-x-2">
+                  <h2 className="text-2xl font-bold">Sales & Revenue Dashboard</h2>
+                  <button onClick={() => setActiveTab('pos')} className="bg-brand-600 text-white px-4 py-2 rounded-xl text-sm font-semibold flex items-center space-x-2">
                     <i data-lucide="plus" className="w-4 h-4"></i>
                     <span>New Bill</span>
                   </button>
                 </div>
 
                 <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-                  <div className="bg-white dark:bg-gray-800 p-4 rounded-2xl border border-gray-100 dark:border-gray-700 shadow-sm">
+                  <div className="bg-white dark:bg-gray-800 p-4 rounded-2xl border shadow-sm">
                     <span className="text-xs font-semibold text-gray-500 uppercase">Total Revenue</span>
-                    <div className="text-xl font-extrabold mt-1">{stats.totalRevenue.toFixed(2)} <span className="text-xs font-normal">AED</span></div>
+                    <div className="text-xl font-extrabold mt-1">{stats.totalRevenue.toFixed(2)} AED</div>
                   </div>
-                  <div className="bg-white dark:bg-gray-800 p-4 rounded-2xl border border-gray-100 dark:border-gray-700 shadow-sm">
+                  <div className="bg-white dark:bg-gray-800 p-4 rounded-2xl border shadow-sm">
                     <span className="text-xs font-semibold text-gray-500 uppercase">Today's Sales</span>
-                    <div className="text-xl font-extrabold mt-1">{stats.todaySales.toFixed(2)} <span className="text-xs font-normal">AED</span></div>
+                    <div className="text-xl font-extrabold mt-1">{stats.todaySales.toFixed(2)} AED</div>
                   </div>
-                  <div className="bg-white dark:bg-gray-800 p-4 rounded-2xl border border-gray-100 dark:border-gray-700 shadow-sm">
+                  <div className="bg-white dark:bg-gray-800 p-4 rounded-2xl border shadow-sm">
                     <span className="text-xs font-semibold text-gray-500 uppercase">UAE VAT (5%)</span>
-                    <div className="text-xl font-extrabold mt-1">{stats.totalVat.toFixed(2)} <span className="text-xs font-normal">AED</span></div>
+                    <div className="text-xl font-extrabold mt-1">{stats.totalVat.toFixed(2)} AED</div>
                   </div>
-                  <div className="bg-white dark:bg-gray-800 p-4 rounded-2xl border border-gray-100 dark:border-gray-700 shadow-sm">
+                  <div className="bg-white dark:bg-gray-800 p-4 rounded-2xl border shadow-sm">
                     <span className="text-xs font-semibold text-gray-500 uppercase">Total Bills</span>
                     <div className="text-xl font-extrabold mt-1">{stats.count}</div>
                   </div>
                 </div>
 
-                <div className="bg-white dark:bg-gray-800 rounded-2xl border border-gray-100 dark:border-gray-700 overflow-hidden shadow-sm">
-                  <div className="p-4 border-b border-gray-100 dark:border-gray-700 font-bold text-sm">
-                    Recent Invoices
-                  </div>
+                <div className="bg-white dark:bg-gray-800 rounded-2xl border overflow-hidden shadow-sm">
+                  <div className="p-4 border-b font-bold text-sm">Recent Invoices</div>
                   <table className="w-full text-left text-sm">
                     <thead className="bg-gray-50 dark:bg-gray-700/50 text-xs text-gray-500 uppercase">
                       <tr>
@@ -418,15 +365,13 @@
                         <th className="p-3">Status</th>
                       </tr>
                     </thead>
-                    <tbody className="divide-y divide-gray-100 dark:divide-gray-700">
+                    <tbody className="divide-y">
                       {invoices.slice(0, 5).map((inv, idx) => (
                         <tr key={idx}>
                           <td className="p-3 font-semibold text-brand-600">{inv.invoiceNumber}</td>
                           <td className="p-3">{inv.customer?.name}</td>
                           <td className="p-3 font-bold">{inv.grandTotal?.toFixed(2)} AED</td>
-                          <td className="p-3">
-                            <span className="text-xs px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-700 font-bold">{inv.status}</span>
-                          </td>
+                          <td className="p-3"><span className="text-xs px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-700 font-bold">{inv.status}</span></td>
                         </tr>
                       ))}
                       {invoices.length === 0 && (
@@ -444,10 +389,7 @@
                   <h2 className="text-xl font-bold">Select Products</h2>
                   <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
                     {products.map(product => (
-                      <div
-                        key={product.id}
-                        onClick={() => addToCart(product)}
-                        className="bg-white dark:bg-gray-800 p-3 rounded-2xl border hover:border-brand-500 cursor-pointer shadow-sm">
+                      <div key={product.id} onClick={() => addToCart(product)} className="bg-white dark:bg-gray-800 p-3 rounded-2xl border hover:border-brand-500 cursor-pointer shadow-sm">
                         <span className="text-[10px] text-gray-400 font-bold">{product.code}</span>
                         <h4 className="font-semibold text-xs">{product.name}</h4>
                         <div className="mt-2 font-bold text-sm">{product.price.toFixed(2)} AED</div>
@@ -459,13 +401,8 @@
                 <div className="lg:col-span-5 bg-white dark:bg-gray-800 rounded-2xl border p-4 shadow-md flex flex-col justify-between">
                   <div>
                     <h3 className="font-bold text-sm mb-2">Invoice Summary</h3>
-                    <select
-                      value={selectedCustomer.id}
-                      onChange={(e) => setSelectedCustomer(customers.find(c => c.id === e.target.value))}
-                      className="w-full p-2 text-sm bg-gray-50 dark:bg-gray-700 border rounded-xl mb-3">
-                      {customers.map(c => (
-                        <option key={c.id} value={c.id}>{c.name}</option>
-                      ))}
+                    <select value={selectedCustomer.id} onChange={(e) => setSelectedCustomer(customers.find(c => c.id === e.target.value))} className="w-full p-2 text-sm bg-gray-50 dark:bg-gray-700 border rounded-xl mb-3">
+                      {customers.map(c => (<option key={c.id} value={c.id}>{c.name}</option>))}
                     </select>
 
                     <div className="space-y-2 max-h-48 overflow-y-auto border-t border-b py-2">
@@ -484,9 +421,7 @@
                     <div className="flex justify-between"><span>VAT (5%):</span><span>{cartCalculations.vatTotal.toFixed(2)} AED</span></div>
                     <div className="flex justify-between font-extrabold text-base text-brand-600"><span>Total:</span><span>{cartCalculations.grandTotal.toFixed(2)} AED</span></div>
                     
-                    <button
-                      onClick={handleCheckout}
-                      className="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-3 rounded-xl shadow mt-2">
+                    <button onClick={handleCheckout} className="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-3 rounded-xl shadow mt-2">
                       Generate & Save Invoice
                     </button>
                   </div>
