@@ -86,32 +86,21 @@
     const db = firebase.firestore();
     const getCol = (colName) => db.collection('artifacts').doc('invoicify_app').collection('public').doc('data').collection(colName);
 
-    const INITIAL_PRODUCTS = [
-      { id: 'p1', name: 'Premium Coffee Beans (1kg)', code: 'PRD-01', price: 85.00, vatRate: 5, stock: 42, category: 'Beverages' },
-      { id: 'p2', name: 'Organic Almond Milk 1L', code: 'PRD-02', price: 18.50, vatRate: 5, stock: 15, category: 'Beverages' },
-      { id: 'p3', name: 'Espresso Machine Cleaning Powder', code: 'PRD-03', price: 45.00, vatRate: 5, stock: 8, category: 'Maintenance' },
-      { id: 'p4', name: 'Takeaway Cup 12oz (Pack of 50)', code: 'PRD-04', price: 32.00, vatRate: 5, stock: 120, category: 'Packaging' },
-    ];
-
-    const INITIAL_CUSTOMERS = [
-      { id: 'c1', name: 'Al Maskoor Trading LLC', phone: '+971501234567', email: 'billing@almaskoor.ae', trn: '100239482700003', address: 'Business Bay, Dubai' },
-      { id: 'c2', name: 'Walk-in Customer', phone: 'N/A', email: 'N/A', trn: 'N/A', address: 'Abu Dhabi, UAE' }
-    ];
-
     function App() {
       const [theme, setTheme] = useState(localStorage.getItem('theme') || 'light');
       const [activeTab, setActiveTab] = useState('dashboard');
       const [billsSubTab, setBillsSubTab] = useState('sales'); 
       const [syncStatus, setSyncStatus] = useState('Connecting...');
 
+      // Clean default company settings (no pre-set company name)
       const [company, setCompany] = useState(() => {
         const local = localStorage.getItem('inv_company');
         return local ? JSON.parse(local) : {
-          name: 'FLOURISH CAFE & TRADING LLC',
-          trn: '100392817400003',
-          phone: '+971 4 888 9999',
-          email: 'info@flourish.ae',
-          address: 'Sheikh Zayed Road, Dubai, UAE',
+          name: 'YOUR BUSINESS NAME LLC',
+          trn: '',
+          phone: '',
+          email: '',
+          address: 'UAE',
           currency: 'AED',
           vatPercent: 5
         };
@@ -119,11 +108,11 @@
 
       const [products, setProducts] = useState(() => {
         const local = localStorage.getItem('inv_products');
-        return local ? JSON.parse(local) : INITIAL_PRODUCTS;
+        return local ? JSON.parse(local) : [];
       });
       const [customers, setCustomers] = useState(() => {
         const local = localStorage.getItem('inv_customers');
-        return local ? JSON.parse(local) : INITIAL_CUSTOMERS;
+        return local ? JSON.parse(local) : [];
       });
       const [invoices, setInvoices] = useState(() => {
         const local = localStorage.getItem('inv_invoices');
@@ -132,7 +121,7 @@
 
       // Cart & Billing State
       const [cart, setCart] = useState([]);
-      const [selectedCustomer, setSelectedCustomer] = useState(INITIAL_CUSTOMERS[0]);
+      const [selectedCustomer, setSelectedCustomer] = useState(null);
       
       const [customerSearchQuery, setCustomerSearchQuery] = useState('');
       const [showCustDropdown, setShowCustDropdown] = useState(false);
@@ -206,7 +195,6 @@
             if (data.length > 0) {
               setCustomers(data);
               localStorage.setItem('inv_customers', JSON.stringify(data));
-              setSelectedCustomer(prev => data.find(c => c.id === prev?.id) || data[0]);
             }
           },
           (err) => console.error("Customers sync error:", err)
@@ -215,7 +203,7 @@
         const unsubProducts = getCol('products').onSnapshot(
           (snapshot) => {
             const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-            if (data.length > 0) {
+            if (data.length >= 0) {
               setProducts(data);
               localStorage.setItem('inv_products', JSON.stringify(data));
             }
@@ -320,6 +308,10 @@
       const startCheckout = () => {
         if (cart.length === 0) {
           alert("Please add items to invoice before proceeding.");
+          return;
+        }
+        if (!selectedCustomer) {
+          alert("Please select or search for a customer.");
           return;
         }
         setShowCheckoutConfirm(true);
@@ -555,7 +547,6 @@
         }
       };
 
-      // WhatsApp & Email Direct Share using Customer Profile Details & PDF Print Attachment
       const handleWhatsAppShare = (inv) => {
         const phone = inv.customer?.phone && inv.customer.phone !== 'N/A' ? inv.customer.phone.replace(/[^0-9]/g, '') : '';
         const message = `Hello ${inv.customer?.name},\nHere is your Tax Invoice (${inv.invoiceNumber}) from ${company.name}.\nGrand Total: ${inv.grandTotal.toFixed(2)} AED.\nThank you for your business!`;
@@ -595,7 +586,7 @@
                   <div className="w-10 h-10 rounded-xl bg-brand-600 flex items-center justify-center text-white font-bold text-lg shadow-md">🇦🇪</div>
                   <div>
                     <h1 className="font-bold text-sm leading-tight line-clamp-1 dark:text-white">{company.name}</h1>
-                    <span className="text-xs text-gray-500 dark:text-gray-400">TRN: {company.trn}</span>
+                    <span className="text-xs text-gray-500 dark:text-gray-400">TRN: {company.trn || 'Not Set'}</span>
                   </div>
                 </div>
                 <button onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')} className="p-2 rounded-lg bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300">
@@ -718,6 +709,9 @@
                         <div className="mt-2 font-bold text-xs md:text-sm text-brand-600">{product.price.toFixed(2)} AED</div>
                       </div>
                     ))}
+                    {products.length === 0 && (
+                      <div className="col-span-full p-6 text-center text-gray-400 text-xs">No products in inventory. Please add items in Stock & Inventory.</div>
+                    )}
                   </div>
                 </div>
 
@@ -879,9 +873,15 @@
                   {products.map((p, idx) => (
                     <div key={p.id || idx} className="bg-white dark:bg-gray-800 p-3 rounded-2xl border dark:border-gray-700 flex justify-between items-center">
                       <div><h4 className="font-bold text-sm dark:text-white">{p.name}</h4><div className="text-xs text-brand-600">{p.price.toFixed(2)} AED</div></div>
-                      <div className="text-right"><span className="text-xs font-bold px-2 py-0.5 bg-emerald-100 dark:bg-emerald-900/30 text-emerald-800 dark:text-emerald-300 rounded">{p.stock} Stock</span></div>
+                      <div className="text-right">
+                        <span className="text-xs font-bold px-2 py-0.5 bg-emerald-100 dark:bg-emerald-900/30 text-emerald-800 dark:text-emerald-300 rounded block mb-1">{p.stock} Stock</span>
+                        <button onClick={() => openEditProduct(p)} className="text-[10px] text-brand-600 underline font-bold">Edit</button>
+                      </div>
                     </div>
                   ))}
+                  {products.length === 0 && (
+                    <div className="col-span-full p-8 text-center text-gray-400 text-xs">No products found. Click "Add Product" to create your inventory list.</div>
+                  )}
                 </div>
               </div>
             )}
@@ -1001,7 +1001,7 @@
           {showProdModal && (
             <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-3">
               <div className="bg-white dark:bg-gray-800 p-5 rounded-2xl max-w-md w-full shadow-2xl space-y-3">
-                <h3 className="font-bold text-sm dark:text-white">Add Product</h3>
+                <h3 className="font-bold text-sm dark:text-white">{editingProd ? 'Edit Product' : 'Add Product'}</h3>
                 <form onSubmit={handleSaveProduct} className="space-y-3 text-xs">
                   <input type="text" required placeholder="Product Name" value={prodForm.name} onChange={e => setProdForm({ ...prodForm, name: e.target.value })} className="w-full p-2 border dark:border-gray-700 rounded dark:bg-gray-700 dark:text-white" />
                   <input type="number" step="0.01" required placeholder="Price" value={prodForm.price} onChange={e => setProdForm({ ...prodForm, price: e.target.value })} className="w-full p-2 border dark:border-gray-700 rounded dark:bg-gray-700 dark:text-white" />
@@ -1057,10 +1057,10 @@
                   {/* Header */}
                   <div className="flex justify-between items-start border-b pb-4">
                     <div>
-                      <h2 className="font-black text-lg tracking-wide uppercase text-brand-700">{activeInvoice.company?.name}</h2>
-                      <p className="text-[11px] text-gray-600 mt-0.5">{activeInvoice.company?.address}</p>
-                      <p className="text-[11px] text-gray-600">Phone: {activeInvoice.company?.phone} | Email: {activeInvoice.company?.email}</p>
-                      <p className="font-bold text-[11px] mt-1">TRN: {activeInvoice.company?.trn}</p>
+                      <h2 className="font-black text-lg tracking-wide uppercase text-brand-700">{activeInvoice.company?.name || 'COMPANY NAME'}</h2>
+                      <p className="text-[11px] text-gray-600 mt-0.5">{activeInvoice.company?.address || 'UAE'}</p>
+                      <p className="text-[11px] text-gray-600">Phone: {activeInvoice.company?.phone || 'N/A'} | Email: {activeInvoice.company?.email || 'N/A'}</p>
+                      <p className="font-bold text-[11px] mt-1">TRN: {activeInvoice.company?.trn || 'N/A'}</p>
                     </div>
                     <div className="text-right">
                       <h3 className="font-extrabold text-base tracking-wider uppercase text-gray-900">{activeInvoice.type || 'Tax Invoice'}</h3>
