@@ -1,16 +1,1072 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width,initial-scale=1">
-  <title>Repository temporarily disabled</title>
-  <style>body{font-family:system-ui,-apple-system,Segoe UI,Roboto,"Helvetica Neue",Arial;margin:0;padding:40px;background:#0b0b0b;color:#e6e6e6}main{max-width:720px;margin:0 auto}h1{font-size:24px;margin-bottom:8px}p{color:#cfcfcf}</style>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>Invoicify - UAE Billing & Inventory System</title>
+  
+  <!-- Tailwind CSS -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          colors: {
+            brand: {
+              50: '#f0f9ff',
+              100: '#e0f2fe',
+              500: '#0284c7',
+              600: '#0284c7',
+              700: '#0369a1',
+              800: '#075985',
+              900: '#0c4a6e',
+            }
+          }
+        }
+      }
+    }
+  </script>
+
+  <!-- React & ReactDOM -->
+  <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+  <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+
+  <!-- Lucide Icons -->
+  <script src="https://unpkg.com/lucide@latest"></script>
+
+  <!-- Firebase JS SDK v11 -->
+  <script type="module">
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/11.0.1/firebase-app.js";
+    import { getFirestore, collection, addDoc, onSnapshot, doc, updateDoc, deleteDoc } from "https://www.gstatic.com/firebasejs/11.0.1/firebase-firestore.js";
+    import { getAuth, signInAnonymously } from "https://www.gstatic.com/firebasejs/11.0.1/firebase-auth.js";
+
+    const firebaseConfig = {
+      apiKey: "AIzaSyDc113ArrZa-bBCvKl-3UEwi4pIAdtwmIA",
+      authDomain: "tharavad336.firebaseapp.com",
+      projectId: "tharavad336",
+      storageBucket: "tharavad336.firebasestorage.app",
+      messagingSenderId: "124534840254",
+      appId: "1:124534840254:web:825d9c694eea1934d977ef",
+      measurementId: "G-XZ92F73DVT"
+    };
+
+    window.fbApp = initializeApp(firebaseConfig);
+    window.fbDb = getFirestore(window.fbApp);
+    window.fbAuth = getAuth(window.fbApp);
+    window.fbMethods = { collection, addDoc, onSnapshot, doc, updateDoc, deleteDoc, signInAnonymously };
+  </script>
+
+  <style>
+    /* Print Specific Styling for Thermal / A4 Invoices */
+    @media print {
+      body * {
+        visibility: hidden;
+      }
+      #printable-area, #printable-area * {
+        visibility: visible;
+      }
+      #printable-area {
+        position: absolute;
+        left: 0;
+        top: 0;
+        width: 100%;
+        margin: 0;
+        padding: 12px;
+        color: #000 !important;
+        background: #fff !important;
+      }
+      .no-print {
+        display: none !important;
+      }
+    }
+    
+    /* Touch Smooth Scrolling */
+    .no-scrollbar::-webkit-scrollbar {
+      display: none;
+    }
+    .no-scrollbar {
+      -ms-overflow-style: none;
+      scrollbar-width: none;
+    }
+  </style>
 </head>
-<body>
-  <main>
-    <h1>Site temporarily disabled for security</h1>
-    <p>This page was removed to stop a possible API key leak. The repository owner is working to rotate credentials and secure secrets.</p>
-    <p>If you are the repository owner and need to restore the site, check the repository history for the previous index.html or contact the repo administrator.</p>
-  </main>
+<body class="bg-gray-50 text-gray-900 dark:bg-gray-900 dark:text-gray-100 min-h-screen transition-colors duration-200">
+  <div id="root"></div>
+
+  <script type="text/babel">
+    const { useState, useEffect, useMemo, useRef } = React;
+
+    // Default Seed Products
+    const INITIAL_PRODUCTS = [
+      { id: 'p1', name: 'Premium Coffee Beans (1kg)', code: 'PRD-01', price: 85.00, vatRate: 5, stock: 42, category: 'Beverages' },
+      { id: 'p2', name: 'Organic Almond Milk 1L', code: 'PRD-02', price: 18.50, vatRate: 5, stock: 15, category: 'Beverages' },
+      { id: 'p3', name: 'Espresso Machine Cleaning Powder', code: 'PRD-03', price: 45.00, vatRate: 5, stock: 8, category: 'Maintenance' },
+      { id: 'p4', name: 'Takeaway Cup 12oz (Pack of 50)', code: 'PRD-04', price: 32.00, vatRate: 5, stock: 120, category: 'Packaging' },
+    ];
+
+    // Default Seed Customers
+    const INITIAL_CUSTOMERS = [
+      { id: 'c1', name: 'Al Maskoor Trading LLC', phone: '+971 50 123 4567', email: 'billing@almaskoor.ae', trn: '100239482700003', address: 'Business Bay, Dubai' },
+      { id: 'c2', name: 'Walk-in Customer', phone: 'N/A', email: 'N/A', trn: 'N/A', address: 'Abu Dhabi, UAE' }
+    ];
+
+    function App() {
+      // System States
+      const [theme, setTheme] = useState(localStorage.getItem('theme') || 'light');
+      const [activeTab, setActiveTab] = useState('dashboard'); // dashboard, pos, invoices, products, customers, reports
+      const [syncStatus, setSyncStatus] = useState('connecting'); // connecting, synced, offline
+      
+      // Business Settings
+      const [company, setCompany] = useState({
+        name: 'FLOURISH CAFE & TRADING LLC',
+        trn: '100392817400003',
+        phone: '+971 4 888 9999',
+        email: 'info@flourish.ae',
+        address: 'Sheikh Zayed Road, Dubai, UAE',
+        currency: 'AED',
+        vatPercent: 5
+      });
+
+      // Data States
+      const [products, setProducts] = useState(() => {
+        const local = localStorage.getItem('inv_products');
+        return local ? JSON.parse(local) : INITIAL_PRODUCTS;
+      });
+      const [customers, setCustomers] = useState(() => {
+        const local = localStorage.getItem('inv_customers');
+        return local ? JSON.parse(local) : INITIAL_CUSTOMERS;
+      });
+      const [invoices, setInvoices] = useState(() => {
+        const local = localStorage.getItem('inv_invoices');
+        return local ? JSON.parse(local) : [];
+      });
+
+      // POS Cart State
+      const [cart, setCart] = useState([]);
+      const [selectedCustomer, setSelectedCustomer] = useState(INITIAL_CUSTOMERS[1]);
+      const [discount, setDiscount] = useState(0);
+      const [discountType, setDiscountType] = useState('amount'); // amount or percent
+      const [paymentMethod, setPaymentMethod] = useState('cash'); // cash, card, bank
+      const [searchProduct, setSearchProduct] = useState('');
+
+      // Print Invoice Modal
+      const [activeInvoice, setActiveInvoice] = useState(null);
+      const [showPrintModal, setShowPrintModal] = useState(false);
+
+      // Search & Filters
+      const [searchInvoice, setSearchInvoice] = useState('');
+      const [invoiceFilter, setInvoiceFilter] = useState('all');
+
+      // Theme toggle effect
+      useEffect(() => {
+        if (theme === 'dark') {
+          document.documentElement.classList.add('dark');
+        } else {
+          document.documentElement.classList.remove('dark');
+        }
+        localStorage.setItem('theme', theme);
+      }, [theme]);
+
+      // Firebase Sync Initialization
+      useEffect(() => {
+        let unsubscribe = null;
+        const initFirebase = async () => {
+          try {
+            if (window.fbMethods && window.fbAuth) {
+              await window.fbMethods.signInAnonymously(window.fbAuth);
+              setSyncStatus('synced');
+
+              // Realtime listener for invoices
+              const q = window.fbMethods.collection(window.fbDb, 'artifacts', 'invoicify_app', 'public', 'data', 'invoices');
+              unsubscribe = window.fbMethods.onSnapshot(q, (snapshot) => {
+                const cloudData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+                if (cloudData.length > 0) {
+                  setInvoices(cloudData);
+                  localStorage.setItem('inv_invoices', JSON.stringify(cloudData));
+                }
+              }, (err) => {
+                console.warn("Firestore listener fallback to LocalStorage:", err);
+                setSyncStatus('offline');
+              });
+            }
+          } catch (e) {
+            console.warn("Using LocalStorage offline mode:", e);
+            setSyncStatus('offline');
+          }
+        };
+
+        initFirebase();
+        return () => unsubscribe && unsubscribe();
+      }, []);
+
+      // Auto persist state to localStorage
+      useEffect(() => { localStorage.setItem('inv_products', JSON.stringify(products)); }, [products]);
+      useEffect(() => { localStorage.setItem('inv_customers', JSON.stringify(customers)); }, [customers]);
+      useEffect(() => { localStorage.setItem('inv_invoices', JSON.stringify(invoices)); }, [invoices]);
+
+      // Icons re-render
+      useEffect(() => {
+        if (window.lucide) window.lucide.createIcons();
+      });
+
+      // Calculations for current Cart
+      const cartCalculations = useMemo(() => {
+        const subtotal = cart.reduce((acc, item) => acc + (item.price * item.qty), 0);
+        let discAmount = 0;
+        if (discountType === 'amount') {
+          discAmount = Math.min(discount, subtotal);
+        } else {
+          discAmount = (subtotal * Math.min(discount, 100)) / 100;
+        }
+        const netTaxable = Math.max(0, subtotal - discAmount);
+        const vatTotal = netTaxable * (company.vatPercent / 100);
+        const grandTotal = netTaxable + vatTotal;
+
+        return { subtotal, discAmount, netTaxable, vatTotal, grandTotal };
+      }, [cart, discount, discountType, company.vatPercent]);
+
+      // Cart Actions
+      const addToCart = (product) => {
+        if (product.stock <= 0) {
+          alert('Warning: Product is out of stock!');
+          return;
+        }
+        const existing = cart.find(i => i.id === product.id);
+        if (existing) {
+          if (existing.qty >= product.stock) {
+            alert(`Cannot add more. Stock limit (${product.stock}) reached.`);
+            return;
+          }
+          setCart(cart.map(i => i.id === product.id ? { ...i, qty: i.qty + 1 } : i));
+        } else {
+          setCart([...cart, { ...product, qty: 1 }]);
+        }
+      };
+
+      const updateCartQty = (id, newQty) => {
+        const prod = products.find(p => p.id === id);
+        if (newQty > prod.stock) {
+          alert(`Stock limit reached! Max available: ${prod.stock}`);
+          return;
+        }
+        if (newQty <= 0) {
+          setCart(cart.filter(i => i.id !== id));
+        } else {
+          setCart(cart.map(i => i.id === id ? { ...i, qty: newQty } : i));
+        }
+      };
+
+      // Checkout Handler
+      const handleCheckout = async () => {
+        if (cart.length === 0) {
+          alert("Please add items to invoice before checking out.");
+          return;
+        }
+
+        const invoiceNum = `INV-${new Date().getFullYear()}-${String(invoices.length + 1).padStart(4, '0')}`;
+        const newInvoice = {
+          invoiceNumber: invoiceNum,
+          date: new Date().toISOString(),
+          customer: selectedCustomer,
+          items: cart,
+          company: company,
+          subtotal: cartCalculations.subtotal,
+          discount: cartCalculations.discAmount,
+          taxableAmount: cartCalculations.netTaxable,
+          vatAmount: cartCalculations.vatTotal,
+          vatRate: company.vatPercent,
+          grandTotal: cartCalculations.grandTotal,
+          paymentMethod: paymentMethod,
+          status: 'Paid'
+        };
+
+        // Deduct inventory
+        const updatedProducts = products.map(p => {
+          const cartItem = cart.find(c => c.id === p.id);
+          if (cartItem) {
+            return { ...p, stock: p.stock - cartItem.qty };
+          }
+          return p;
+        });
+
+        setProducts(updatedProducts);
+        const updatedInvoices = [newInvoice, ...invoices];
+        setInvoices(updatedInvoices);
+
+        // Try sync to Firebase
+        if (syncStatus === 'synced' && window.fbMethods) {
+          try {
+            await window.fbMethods.addDoc(
+              window.fbMethods.collection(window.fbDb, 'artifacts', 'invoicify_app', 'public', 'data', 'invoices'),
+              newInvoice
+            );
+          } catch(err) {
+            console.error("Cloud save error:", err);
+          }
+        }
+
+        // Reset Cart & View Invoice
+        setCart([]);
+        setDiscount(0);
+        setActiveInvoice(newInvoice);
+        setShowPrintModal(true);
+      };
+
+      // Invoice Return / Refund
+      const handleReturnInvoice = (inv) => {
+        if (!confirm(`Are you sure you want to refund/cancel Invoice ${inv.invoiceNumber}? Stock will be restored.`)) return;
+
+        // Restore Stock
+        const updatedProducts = products.map(p => {
+          const cartItem = inv.items.find(i => i.id === p.id);
+          if (cartItem) {
+            return { ...p, stock: p.stock + cartItem.qty };
+          }
+          return p;
+        });
+
+        const updatedInvoices = invoices.map(i => i.invoiceNumber === inv.invoiceNumber ? { ...i, status: 'Returned' } : i);
+        setProducts(updatedProducts);
+        setInvoices(updatedInvoices);
+      };
+
+      // Summary Statistics for Dashboard
+      const stats = useMemo(() => {
+        const todayStr = new Date().toISOString().split('T')[0];
+        const activeInvoices = invoices.filter(i => i.status !== 'Returned');
+
+        const totalRevenue = activeInvoices.reduce((a, b) => a + b.grandTotal, 0);
+        const totalVat = activeInvoices.reduce((a, b) => a + b.vatAmount, 0);
+        const todaySales = activeInvoices
+          .filter(i => i.date.startsWith(todayStr))
+          .reduce((a, b) => a + b.grandTotal, 0);
+        
+        const lowStockCount = products.filter(p => p.stock <= 10).length;
+
+        return { totalRevenue, totalVat, todaySales, count: activeInvoices.length, lowStockCount };
+      }, [invoices, products]);
+
+      return (
+        <div className="flex flex-col md:flex-row min-h-screen">
+          
+          {/* SIDEBAR NAVIGATION (Desktop) / TOPBAR (Mobile) */}
+          <aside className="no-print bg-white dark:bg-gray-800 border-r border-gray-200 dark:border-gray-700 w-full md:w-64 flex-shrink-0 flex flex-col justify-between">
+            <div>
+              {/* Header Profile */}
+              <div className="p-4 border-b border-gray-200 dark:border-gray-700 flex items-center justify-between">
+                <div className="flex items-center space-x-3">
+                  <div className="w-10 h-10 rounded-xl bg-brand-600 flex items-center justify-center text-white font-bold text-lg shadow-md shadow-brand-500/30">
+                    🇦🇪
+                  </div>
+                  <div>
+                    <h1 className="font-bold text-sm leading-tight line-clamp-1">{company.name}</h1>
+                    <span className="text-xs text-gray-500 dark:text-gray-400">TRN: {company.trn}</span>
+                  </div>
+                </div>
+                {/* Dark Mode Switcher */}
+                <button 
+                  onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
+                  className="p-2 rounded-lg bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300 hover:opacity-80"
+                  title="Toggle Light/Dark Theme">
+                  <i data-lucide={theme === 'dark' ? 'sun' : 'moon'} className="w-4 h-4"></i>
+                </button>
+              </div>
+
+              {/* Navigation Links */}
+              <nav className="p-3 space-y-1">
+                {[
+                  { id: 'dashboard', label: 'Dashboard', icon: 'layout-dashboard' },
+                  { id: 'pos', label: 'Create Invoice', icon: 'file-text' },
+                  { id: 'invoices', label: 'Invoices & Bills', icon: 'receipt' },
+                  { id: 'products', label: 'Products & Stock', icon: 'package' },
+                  { id: 'customers', label: 'Customers', icon: 'users' },
+                  { id: 'reports', label: 'Reports & Settings', icon: 'bar-chart-3' },
+                ].map(nav => (
+                  <button
+                    key={nav.id}
+                    onClick={() => setActiveTab(nav.id)}
+                    className={`w-full flex items-center space-x-3 px-3 py-2.5 rounded-lg font-medium text-sm transition-all ${
+                      activeTab === nav.id 
+                        ? 'bg-brand-600 text-white shadow-md shadow-brand-600/20' 
+                        : 'text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700/50'
+                    }`}>
+                    <i data-lucide={nav.icon} className="w-4 h-4"></i>
+                    <span>{nav.label}</span>
+                    {nav.id === 'products' && stats.lowStockCount > 0 && (
+                      <span className="ml-auto bg-amber-500 text-white text-[10px] px-1.5 py-0.5 rounded-full font-bold">
+                        {stats.lowStockCount}
+                      </span>
+                    )}
+                  </button>
+                ))}
+              </nav>
+            </div>
+
+            {/* Cloud Sync Status Footer */}
+            <div className="p-3 border-t border-gray-200 dark:border-gray-700 text-xs text-gray-500 dark:text-gray-400 flex items-center justify-between">
+              <div className="flex items-center space-x-2">
+                <span className={`w-2 h-2 rounded-full ${syncStatus === 'synced' ? 'bg-emerald-500 animate-pulse' : 'bg-amber-500'}`}></span>
+                <span className="capitalize">{syncStatus === 'synced' ? 'Cloud Synced' : 'Offline Mode'}</span>
+              </div>
+              <span className="text-[10px] bg-gray-100 dark:bg-gray-700 px-1.5 py-0.5 rounded">v2.5 UAE</span>
+            </div>
+          </aside>
+
+          {/* MAIN CONTENT AREA */}
+          <main className="flex-1 overflow-y-auto p-4 md:p-6 mb-16 md:mb-0">
+            
+            {/* 1. DASHBOARD VIEW */}
+            {activeTab === 'dashboard' && (
+              <div className="space-y-6">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <h2 className="text-2xl font-bold">Sales & Revenue Dashboard</h2>
+                    <p className="text-sm text-gray-500">Real-time overview of business performance</p>
+                  </div>
+                  <button 
+                    onClick={() => setActiveTab('pos')}
+                    className="bg-brand-600 text-white px-4 py-2 rounded-xl text-sm font-semibold hover:bg-brand-700 flex items-center space-x-2 shadow-lg shadow-brand-600/20">
+                    <i data-lucide="plus" className="w-4 h-4"></i>
+                    <span>New Bill</span>
+                  </button>
+                </div>
+
+                {/* Metrics Grid */}
+                <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+                  <div className="bg-white dark:bg-gray-800 p-4 rounded-2xl border border-gray-100 dark:border-gray-700 shadow-sm">
+                    <div className="flex items-center justify-between text-gray-500 mb-2">
+                      <span className="text-xs font-semibold uppercase">Total Revenue</span>
+                      <i data-lucide="dollar-sign" className="w-4 h-4 text-emerald-500"></i>
+                    </div>
+                    <div className="text-xl font-extrabold">{stats.totalRevenue.toFixed(2)} <span className="text-xs font-normal">AED</span></div>
+                    <span className="text-[11px] text-emerald-600 font-medium">Incl. VAT</span>
+                  </div>
+
+                  <div className="bg-white dark:bg-gray-800 p-4 rounded-2xl border border-gray-100 dark:border-gray-700 shadow-sm">
+                    <div className="flex items-center justify-between text-gray-500 mb-2">
+                      <span className="text-xs font-semibold uppercase">Today's Sales</span>
+                      <i data-lucide="trending-up" className="w-4 h-4 text-brand-500"></i>
+                    </div>
+                    <div className="text-xl font-extrabold">{stats.todaySales.toFixed(2)} <span className="text-xs font-normal">AED</span></div>
+                    <span className="text-[11px] text-gray-400">Recorded today</span>
+                  </div>
+
+                  <div className="bg-white dark:bg-gray-800 p-4 rounded-2xl border border-gray-100 dark:border-gray-700 shadow-sm">
+                    <div className="flex items-center justify-between text-gray-500 mb-2">
+                      <span className="text-xs font-semibold uppercase">UAE VAT (5%) Tax</span>
+                      <i data-lucide="percent" className="w-4 h-4 text-indigo-500"></i>
+                    </div>
+                    <div className="text-xl font-extrabold">{stats.totalVat.toFixed(2)} <span className="text-xs font-normal">AED</span></div>
+                    <span className="text-[11px] text-indigo-500 font-medium">Federal Tax Payable</span>
+                  </div>
+
+                  <div className="bg-white dark:bg-gray-800 p-4 rounded-2xl border border-gray-100 dark:border-gray-700 shadow-sm">
+                    <div className="flex items-center justify-between text-gray-500 mb-2">
+                      <span className="text-xs font-semibold uppercase">Total Bills Issued</span>
+                      <i data-lucide="receipt" className="w-4 h-4 text-purple-500"></i>
+                    </div>
+                    <div className="text-xl font-extrabold">{stats.count}</div>
+                    <span className="text-[11px] text-gray-400">Invoices saved</span>
+                  </div>
+                </div>
+
+                {/* Stock Alert Warning Banner */}
+                {stats.lowStockCount > 0 && (
+                  <div className="bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-2xl p-4 flex items-center justify-between">
+                    <div className="flex items-center space-x-3">
+                      <i data-lucide="alert-triangle" className="w-5 h-5 text-amber-600 dark:text-amber-400"></i>
+                      <div>
+                        <h4 className="font-bold text-sm text-amber-900 dark:text-amber-200">Stock Inventory Alert</h4>
+                        <p className="text-xs text-amber-700 dark:text-amber-300">{stats.lowStockCount} items are low on stock (&le; 10 units left).</p>
+                      </div>
+                    </div>
+                    <button onClick={() => setActiveTab('products')} className="text-xs bg-amber-600 text-white font-semibold px-3 py-1.5 rounded-lg">
+                      View Stock
+                    </button>
+                  </div>
+                )}
+
+                {/* Recent Invoices Quick Table */}
+                <div className="bg-white dark:bg-gray-800 rounded-2xl border border-gray-100 dark:border-gray-700 overflow-hidden shadow-sm">
+                  <div className="p-4 border-b border-gray-100 dark:border-gray-700 flex items-center justify-between">
+                    <h3 className="font-bold text-sm">Recent Transactions</h3>
+                    <button onClick={() => setActiveTab('invoices')} className="text-xs text-brand-600 font-semibold hover:underline">View All</button>
+                  </div>
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-left text-sm">
+                      <thead className="bg-gray-50 dark:bg-gray-700/50 text-xs text-gray-500 uppercase">
+                        <tr>
+                          <th className="p-3">Invoice #</th>
+                          <th className="p-3">Customer</th>
+                          <th className="p-3">Amount</th>
+                          <th className="p-3">Method</th>
+                          <th className="p-3">Status</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-gray-100 dark:divide-gray-700">
+                        {invoices.slice(0, 5).map((inv, idx) => (
+                          <tr key={idx} className="hover:bg-gray-50/50 dark:hover:bg-gray-700/30">
+                            <td className="p-3 font-semibold text-brand-600">{inv.invoiceNumber}</td>
+                            <td className="p-3">{inv.customer.name}</td>
+                            <td className="p-3 font-bold">{inv.grandTotal.toFixed(2)} AED</td>
+                            <td className="p-3 capitalize text-xs"><span className="bg-gray-100 dark:bg-gray-700 px-2 py-0.5 rounded">{inv.paymentMethod}</span></td>
+                            <td className="p-3">
+                              <span className={`text-[11px] px-2 py-0.5 rounded-full font-semibold ${
+                                inv.status === 'Paid' ? 'bg-emerald-100 text-emerald-700' : 'bg-red-100 text-red-700'
+                              }`}>
+                                {inv.status}
+                              </span>
+                            </td>
+                          </tr>
+                        ))}
+                        {invoices.length === 0 && (
+                          <tr><td colSpan="5" className="p-6 text-center text-gray-400">No invoices created yet.</td></tr>
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* 2. CREATE INVOICE (POS ENGINE) */}
+            {activeTab === 'pos' && (
+              <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+                
+                {/* Left Column: Product Selector */}
+                <div className="lg:col-span-7 space-y-4">
+                  <div className="flex flex-col sm:flex-row items-center justify-between gap-3">
+                    <h2 className="text-xl font-bold">Select Items</h2>
+                    {/* Search Bar */}
+                    <div className="relative w-full sm:w-64">
+                      <i data-lucide="search" className="w-4 h-4 absolute left-3 top-3 text-gray-400"></i>
+                      <input
+                        type="text"
+                        placeholder="Search product or code..."
+                        value={searchProduct}
+                        onChange={(e) => setSearchProduct(e.target.value)}
+                        className="w-full pl-9 pr-3 py-2 text-sm bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl focus:outline-none focus:ring-2 focus:ring-brand-500"
+                      />
+                    </div>
+                  </div>
+
+                  {/* Product Cards Grid */}
+                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 max-h-[calc(100vh-220px)] overflow-y-auto pr-1">
+                    {products
+                      .filter(p => p.name.toLowerCase().includes(searchProduct.toLowerCase()) || p.code.toLowerCase().includes(searchProduct.toLowerCase()))
+                      .map(product => (
+                        <div
+                          key={product.id}
+                          onClick={() => addToCart(product)}
+                          className="bg-white dark:bg-gray-800 p-3 rounded-2xl border border-gray-100 dark:border-gray-700 shadow-sm hover:border-brand-500 cursor-pointer transition-all flex flex-col justify-between group">
+                          <div>
+                            <div className="flex items-center justify-between mb-1">
+                              <span className="text-[10px] font-bold text-gray-400">{product.code}</span>
+                              <span className={`text-[10px] font-bold px-1.5 py-0.2 rounded ${
+                                product.stock > 10 ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'
+                              }`}>
+                                {product.stock} left
+                              </span>
+                            </div>
+                            <h4 className="font-semibold text-xs line-clamp-2 group-hover:text-brand-600">{product.name}</h4>
+                          </div>
+                          <div className="mt-3 flex items-center justify-between pt-2 border-t border-gray-50 dark:border-gray-700">
+                            <span className="text-sm font-bold">{product.price.toFixed(2)} <span className="text-[10px] font-normal">AED</span></span>
+                            <span className="w-6 h-6 rounded-lg bg-brand-50 dark:bg-brand-900/30 text-brand-600 flex items-center justify-center font-bold text-xs">
+                              +
+                            </span>
+                          </div>
+                        </div>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Right Column: Active Bill / Cart */}
+                <div className="lg:col-span-5 bg-white dark:bg-gray-800 rounded-2xl border border-gray-100 dark:border-gray-700 p-4 flex flex-col justify-between shadow-md">
+                  <div>
+                    {/* Customer Selection */}
+                    <div className="mb-4 space-y-2">
+                      <label className="text-xs font-bold text-gray-500 uppercase">Customer Information</label>
+                      <select
+                        value={selectedCustomer.id}
+                        onChange={(e) => setSelectedCustomer(customers.find(c => c.id === e.target.value))}
+                        className="w-full p-2 text-sm bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-xl focus:outline-none">
+                        {customers.map(c => (
+                          <option key={c.id} value={c.id}>{c.name} {c.trn !== 'N/A' ? `(TRN: ${c.trn})` : ''}</option>
+                        ))}
+                      </select>
+                    </div>
+
+                    {/* Cart Items List */}
+                    <div className="border-t border-b border-gray-100 dark:border-gray-700 my-3 py-2 space-y-2 max-h-56 overflow-y-auto">
+                      {cart.length === 0 && (
+                        <div className="py-8 text-center text-gray-400 text-xs">
+                          <i data-lucide="shopping-bag" className="w-8 h-8 mx-auto mb-2 opacity-30"></i>
+                          No items added yet. Click items to build invoice.
+                        </div>
+                      )}
+                      {cart.map(item => (
+                        <div key={item.id} className="flex items-center justify-between text-xs py-1">
+                          <div className="flex-1 pr-2">
+                            <h5 className="font-bold line-clamp-1">{item.name}</h5>
+                            <span className="text-gray-400">{item.price.toFixed(2)} AED x {item.qty}</span>
+                          </div>
+                          <div className="flex items-center space-x-2">
+                            <button onClick={() => updateCartQty(item.id, item.qty - 1)} className="w-6 h-6 rounded bg-gray-100 dark:bg-gray-700 font-bold">-</button>
+                            <span className="font-bold w-4 text-center">{item.qty}</span>
+                            <button onClick={() => updateCartQty(item.id, item.qty + 1)} className="w-6 h-6 rounded bg-gray-100 dark:bg-gray-700 font-bold">+</button>
+                            <span className="font-bold w-14 text-right">{(item.price * item.qty).toFixed(2)}</span>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+
+                    {/* Discount & Payment Controls */}
+                    <div className="space-y-3 pt-2">
+                      {/* Discount Row */}
+                      <div className="flex items-center space-x-2">
+                        <label className="text-xs font-semibold text-gray-500 w-20">Discount:</label>
+                        <input
+                          type="number"
+                          min="0"
+                          value={discount}
+                          onChange={(e) => setDiscount(parseFloat(e.target.value) || 0)}
+                          className="w-full p-1.5 text-xs bg-gray-50 dark:bg-gray-700 border rounded-lg"
+                        />
+                        <select
+                          value={discountType}
+                          onChange={(e) => setDiscountType(e.target.value)}
+                          className="p-1.5 text-xs bg-gray-50 dark:bg-gray-700 border rounded-lg">
+                          <option value="amount">AED</option>
+                          <option value="percent">%</option>
+                        </select>
+                      </div>
+
+                      {/* Payment Method Selector */}
+                      <div className="flex items-center space-x-2">
+                        <label className="text-xs font-semibold text-gray-500 w-20">Payment:</label>
+                        <div className="grid grid-cols-3 gap-1 w-full">
+                          {['cash', 'card', 'bank'].map(m => (
+                            <button
+                              key={m}
+                              onClick={() => setPaymentMethod(m)}
+                              className={`py-1 text-[11px] font-bold rounded-lg border capitalize ${
+                                paymentMethod === m ? 'bg-brand-600 text-white border-brand-600' : 'bg-gray-50 dark:bg-gray-700 border-gray-200 dark:border-gray-600'
+                              }`}>
+                              {m}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* VAT Breakdown & Grand Total */}
+                  <div className="mt-4 pt-3 border-t border-gray-200 dark:border-gray-700 space-y-1.5 text-xs">
+                    <div className="flex justify-between text-gray-500">
+                      <span>Subtotal:</span>
+                      <span>{cartCalculations.subtotal.toFixed(2)} AED</span>
+                    </div>
+                    {cartCalculations.discAmount > 0 && (
+                      <div className="flex justify-between text-red-500">
+                        <span>Discount:</span>
+                        <span>-{cartCalculations.discAmount.toFixed(2)} AED</span>
+                      </div>
+                    )}
+                    <div className="flex justify-between text-gray-500">
+                      <span>UAE VAT ({company.vatPercent}%):</span>
+                      <span>{cartCalculations.vatTotal.toFixed(2)} AED</span>
+                    </div>
+                    <div className="flex justify-between text-base font-extrabold text-brand-600 pt-2 border-t">
+                      <span>Grand Total:</span>
+                      <span>{cartCalculations.grandTotal.toFixed(2)} AED</span>
+                    </div>
+
+                    <button
+                      onClick={handleCheckout}
+                      className="w-full mt-3 bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-3 rounded-xl shadow-lg shadow-emerald-600/20 flex items-center justify-center space-x-2">
+                      <i data-lucide="check-circle" className="w-5 h-5"></i>
+                      <span>Generate Tax Invoice</span>
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* 3. INVOICES HISTORY & SEARCH */}
+            {activeTab === 'invoices' && (
+              <div className="space-y-4">
+                <div className="flex flex-col sm:flex-row items-center justify-between gap-3">
+                  <div>
+                    <h2 className="text-xl font-bold">Invoices & Tax Receipts</h2>
+                    <p className="text-xs text-gray-500">Search, print or process refunds</p>
+                  </div>
+
+                  <div className="flex items-center space-x-2 w-full sm:w-auto">
+                    <input
+                      type="text"
+                      placeholder="Search bill # or customer..."
+                      value={searchInvoice}
+                      onChange={(e) => setSearchInvoice(e.target.value)}
+                      className="p-2 text-sm bg-white dark:bg-gray-800 border rounded-xl w-full sm:w-64"
+                    />
+                    <select
+                      value={invoiceFilter}
+                      onChange={(e) => setInvoiceFilter(e.target.value)}
+                      className="p-2 text-sm bg-white dark:bg-gray-800 border rounded-xl">
+                      <option value="all">All Status</option>
+                      <option value="Paid">Paid</option>
+                      <option value="Returned">Returned</option>
+                    </select>
+                  </div>
+                </div>
+
+                <div className="bg-white dark:bg-gray-800 rounded-2xl border border-gray-100 dark:border-gray-700 overflow-hidden shadow-sm">
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-left text-sm">
+                      <thead className="bg-gray-50 dark:bg-gray-700/50 text-xs text-gray-500 uppercase">
+                        <tr>
+                          <th className="p-3">Invoice #</th>
+                          <th className="p-3">Date</th>
+                          <th className="p-3">Customer</th>
+                          <th className="p-3">Tax (VAT 5%)</th>
+                          <th className="p-3">Grand Total</th>
+                          <th className="p-3">Status</th>
+                          <th className="p-3 text-right">Actions</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-gray-100 dark:divide-gray-700">
+                        {invoices
+                          .filter(i => {
+                            const matchSearch = i.invoiceNumber.toLowerCase().includes(searchInvoice.toLowerCase()) || 
+                                                i.customer.name.toLowerCase().includes(searchInvoice.toLowerCase());
+                            const matchFilter = invoiceFilter === 'all' || i.status === invoiceFilter;
+                            return matchSearch && matchFilter;
+                          })
+                          .map((inv, idx) => (
+                            <tr key={idx} className="hover:bg-gray-50/50 dark:hover:bg-gray-700/30">
+                              <td className="p-3 font-bold text-brand-600">{inv.invoiceNumber}</td>
+                              <td className="p-3 text-xs">{new Date(inv.date).toLocaleDateString()}</td>
+                              <td className="p-3 font-medium">{inv.customer.name}</td>
+                              <td className="p-3">{inv.vatAmount.toFixed(2)} AED</td>
+                              <td className="p-3 font-extrabold">{inv.grandTotal.toFixed(2)} AED</td>
+                              <td className="p-3">
+                                <span className={`text-[11px] px-2 py-0.5 rounded-full font-bold ${
+                                  inv.status === 'Paid' ? 'bg-emerald-100 text-emerald-700' : 'bg-red-100 text-red-700'
+                                }`}>
+                                  {inv.status}
+                                </span>
+                              </td>
+                              <td className="p-3 text-right space-x-2">
+                                <button
+                                  onClick={() => { setActiveInvoice(inv); setShowPrintModal(true); }}
+                                  className="p-1.5 bg-gray-100 dark:bg-gray-700 rounded-lg text-gray-600 dark:text-gray-300 hover:bg-brand-600 hover:text-white"
+                                  title="Print PDF Invoice">
+                                  <i data-lucide="printer" className="w-4 h-4"></i>
+                                </button>
+                                {inv.status !== 'Returned' && (
+                                  <button
+                                    onClick={() => handleReturnInvoice(inv)}
+                                    className="p-1.5 bg-red-50 text-red-600 rounded-lg hover:bg-red-600 hover:text-white"
+                                    title="Process Refund/Return">
+                                    <i data-lucide="rotate-ccw" className="w-4 h-4"></i>
+                                  </button>
+                                )}
+                              </td>
+                            </tr>
+                          ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* 4. PRODUCTS & STOCK MANAGEMENT */}
+            {activeTab === 'products' && (
+              <div className="space-y-4">
+                <div className="flex items-center justify-between">
+                  <h2 className="text-xl font-bold">Inventory & Product Catalog</h2>
+                  <button
+                    onClick={() => {
+                      const name = prompt("Enter Product Name:");
+                      if (!name) return;
+                      const price = parseFloat(prompt("Enter Unit Price (AED):") || '0');
+                      const stock = parseInt(prompt("Enter Stock Quantity:") || '0');
+                      const newProd = {
+                        id: 'p_' + Date.now(),
+                        name,
+                        code: 'PRD-' + (products.length + 1),
+                        price,
+                        vatRate: 5,
+                        stock,
+                        category: 'General'
+                      };
+                      setProducts([...products, newProd]);
+                    }}
+                    className="bg-brand-600 text-white px-3 py-2 rounded-xl text-xs font-bold flex items-center space-x-1">
+                    <i data-lucide="plus" className="w-4 h-4"></i>
+                    <span>Add Product</span>
+                  </button>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                  {products.map(p => (
+                    <div key={p.id} className="bg-white dark:bg-gray-800 p-4 rounded-2xl border border-gray-100 dark:border-gray-700 shadow-sm flex items-center justify-between">
+                      <div>
+                        <span className="text-[10px] font-bold text-gray-400">{p.code}</span>
+                        <h4 className="font-bold text-sm">{p.name}</h4>
+                        <div className="text-xs text-gray-500 mt-1">
+                          Price: <span className="font-bold text-gray-800 dark:text-gray-200">{p.price.toFixed(2)} AED</span> (VAT 5%)
+                        </div>
+                      </div>
+                      <div className="text-right">
+                        <span className={`text-xs font-bold px-2 py-1 rounded-lg ${p.stock <= 10 ? 'bg-amber-100 text-amber-800' : 'bg-emerald-100 text-emerald-800'}`}>
+                          {p.stock} Stock
+                        </span>
+                        <div className="mt-2 flex space-x-1 justify-end">
+                          <button
+                            onClick={() => {
+                              const newStock = parseInt(prompt("Update stock count:", p.stock) || p.stock);
+                              setProducts(products.map(prod => prod.id === p.id ? { ...prod, stock: newStock } : prod));
+                            }}
+                            className="text-[10px] bg-gray-100 dark:bg-gray-700 px-2 py-1 rounded font-semibold">
+                            Adjust
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* 5. CUSTOMERS MANAGEMENT */}
+            {activeTab === 'customers' && (
+              <div className="space-y-4">
+                <div className="flex items-center justify-between">
+                  <h2 className="text-xl font-bold">Customer Directory</h2>
+                  <button
+                    onClick={() => {
+                      const name = prompt("Enter Customer / Business Name:");
+                      if (!name) return;
+                      const trn = prompt("Enter UAE TRN Number (Optional):") || 'N/A';
+                      const phone = prompt("Enter Phone Number:") || 'N/A';
+                      const newC = { id: 'c_' + Date.now(), name, trn, phone, email: 'N/A', address: 'UAE' };
+                      setCustomers([...customers, newC]);
+                    }}
+                    className="bg-brand-600 text-white px-3 py-2 rounded-xl text-xs font-bold flex items-center space-x-1">
+                    <i data-lucide="user-plus" className="w-4 h-4"></i>
+                    <span>Add Customer</span>
+                  </button>
+                </div>
+
+                <div className="bg-white dark:bg-gray-800 rounded-2xl border border-gray-100 dark:border-gray-700 overflow-hidden shadow-sm">
+                  <table className="w-full text-left text-sm">
+                    <thead className="bg-gray-50 dark:bg-gray-700/50 text-xs text-gray-500 uppercase">
+                      <tr>
+                        <th className="p-3">Name</th>
+                        <th className="p-3">TRN (Tax Reg #)</th>
+                        <th className="p-3">Phone</th>
+                        <th className="p-3">Address</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-gray-100 dark:divide-gray-700">
+                      {customers.map(c => (
+                        <tr key={c.id}>
+                          <td className="p-3 font-bold">{c.name}</td>
+                          <td className="p-3 font-mono text-xs">{c.trn}</td>
+                          <td className="p-3 text-xs">{c.phone}</td>
+                          <td className="p-3 text-xs text-gray-500">{c.address}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
+
+            {/* 6. REPORTS & BUSINESS SETTINGS */}
+            {activeTab === 'reports' && (
+              <div className="space-y-6">
+                <h2 className="text-xl font-bold">Business Settings & Tax Rules</h2>
+                
+                <div className="bg-white dark:bg-gray-800 p-6 rounded-2xl border border-gray-100 dark:border-gray-700 space-y-4 max-w-xl">
+                  <h3 className="font-bold text-sm text-brand-600">Company Tax & Invoice Profile</h3>
+                  
+                  <div className="space-y-3 text-xs">
+                    <div>
+                      <label className="font-semibold text-gray-500">Business Name</label>
+                      <input
+                        type="text"
+                        value={company.name}
+                        onChange={(e) => setCompany({ ...company, name: e.target.value })}
+                        className="w-full p-2 bg-gray-50 dark:bg-gray-700 border rounded-lg mt-1"
+                      />
+                    </div>
+                    <div>
+                      <label className="font-semibold text-gray-500">UAE Tax Registration Number (TRN)</label>
+                      <input
+                        type="text"
+                        value={company.trn}
+                        onChange={(e) => setCompany({ ...company, trn: e.target.value })}
+                        className="w-full p-2 bg-gray-50 dark:bg-gray-700 border rounded-lg mt-1 font-mono"
+                      />
+                    </div>
+                    <div>
+                      <label className="font-semibold text-gray-500">Standard VAT Rate (%)</label>
+                      <input
+                        type="number"
+                        value={company.vatPercent}
+                        onChange={(e) => setCompany({ ...company, vatPercent: parseFloat(e.target.value) || 0 })}
+                        className="w-full p-2 bg-gray-50 dark:bg-gray-700 border rounded-lg mt-1"
+                      />
+                    </div>
+                    <div>
+                      <label className="font-semibold text-gray-500">Address Details</label>
+                      <input
+                        type="text"
+                        value={company.address}
+                        onChange={(e) => setCompany({ ...company, address: e.target.value })}
+                        className="w-full p-2 bg-gray-50 dark:bg-gray-700 border rounded-lg mt-1"
+                      />
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+          </main>
+
+          {/* MOBILE BOTTOM NAVIGATION BAR */}
+          <div className="no-print md:hidden fixed bottom-0 left-0 right-0 bg-white dark:bg-gray-800 border-t border-gray-200 dark:border-gray-700 flex justify-around p-2 z-40">
+            {[
+              { id: 'dashboard', label: 'Home', icon: 'layout-dashboard' },
+              { id: 'pos', label: 'Billing', icon: 'file-text' },
+              { id: 'invoices', label: 'Bills', icon: 'receipt' },
+              { id: 'products', label: 'Stock', icon: 'package' },
+            ].map(nav => (
+              <button
+                key={nav.id}
+                onClick={() => setActiveTab(nav.id)}
+                className={`flex flex-col items-center p-1 font-medium text-[10px] ${
+                  activeTab === nav.id ? 'text-brand-600' : 'text-gray-400'
+                }`}>
+                <i data-lucide={nav.icon} className="w-5 h-5 mb-0.5"></i>
+                <span>{nav.label}</span>
+              </button>
+            ))}
+          </div>
+
+          {/* OFFICIAL UAE TAX INVOICE PRINT MODAL */}
+          {showPrintModal && activeInvoice && (
+            <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+              <div className="bg-white dark:bg-gray-900 rounded-2xl max-w-lg w-full max-h-[90vh] overflow-y-auto p-6 shadow-2xl relative">
+                
+                {/* Printable Wrapper */}
+                <div id="printable-area" className="text-black bg-white p-2 text-xs space-y-4">
+                  {/* Tax Invoice Header */}
+                  <div className="text-center border-b pb-3">
+                    <h2 className="text-xl font-extrabold uppercase tracking-wide">TAX INVOICE</h2>
+                    <h3 className="text-sm font-bold text-gray-600">فاتورة ضريبية</h3>
+                    <p className="font-bold text-sm mt-1">{activeInvoice.company.name}</p>
+                    <p className="text-[11px] text-gray-600">{activeInvoice.company.address}</p>
+                    <p className="font-mono text-[11px] font-bold mt-1">TRN: {activeInvoice.company.trn}</p>
+                  </div>
+
+                  {/* Metadata */}
+                  <div className="flex justify-between border-b pb-2 text-[11px]">
+                    <div>
+                      <p><strong>Invoice #:</strong> {activeInvoice.invoiceNumber}</p>
+                      <p><strong>Date:</strong> {new Date(activeInvoice.date).toLocaleString()}</p>
+                      <p><strong>Payment:</strong> <span className="uppercase">{activeInvoice.paymentMethod}</span></p>
+                    </div>
+                    <div className="text-right">
+                      <p><strong>Customer:</strong> {activeInvoice.customer.name}</p>
+                      <p><strong>Customer TRN:</strong> {activeInvoice.customer.trn}</p>
+                    </div>
+                  </div>
+
+                  {/* Itemized Table */}
+                  <table className="w-full text-left border-collapse">
+                    <thead>
+                      <tr className="border-b text-[10px] uppercase bg-gray-50">
+                        <th className="py-1">Item</th>
+                        <th className="py-1 text-center">Qty</th>
+                        <th className="py-1 text-right">Price</th>
+                        <th className="py-1 text-right">VAT (5%)</th>
+                        <th className="py-1 text-right">Total</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y">
+                      {activeInvoice.items.map((item, idx) => {
+                        const lineNet = item.price * item.qty;
+                        const lineVat = lineNet * (activeInvoice.vatRate / 100);
+                        return (
+                          <tr key={idx}>
+                            <td className="py-1.5 font-medium">{item.name}</td>
+                            <td className="py-1.5 text-center">{item.qty}</td>
+                            <td className="py-1.5 text-right">{item.price.toFixed(2)}</td>
+                            <td className="py-1.5 text-right">{lineVat.toFixed(2)}</td>
+                            <td className="py-1.5 text-right font-bold">{(lineNet + lineVat).toFixed(2)}</td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+
+                  {/* Breakdown Totals */}
+                  <div className="border-t pt-2 space-y-1 text-right">
+                    <div className="flex justify-between">
+                      <span>Taxable Amount (Subtotal):</span>
+                      <span>{activeInvoice.taxableAmount.toFixed(2)} AED</span>
+                    </div>
+                    {activeInvoice.discount > 0 && (
+                      <div className="flex justify-between text-red-600">
+                        <span>Discount:</span>
+                        <span>-{activeInvoice.discount.toFixed(2)} AED</span>
+                      </div>
+                    )}
+                    <div className="flex justify-between">
+                      <span>Total VAT (5%):</span>
+                      <span>{activeInvoice.vatAmount.toFixed(2)} AED</span>
+                    </div>
+                    <div className="flex justify-between text-sm font-extrabold border-t pt-1">
+                      <span>Grand Total (AED):</span>
+                      <span>{activeInvoice.grandTotal.toFixed(2)} AED</span>
+                    </div>
+                  </div>
+
+                  <div className="text-center text-[10px] text-gray-500 pt-4 border-t">
+                    Thank you for your business! / شكرا لزيارتكم
+                  </div>
+                </div>
+
+                {/* Modal Action Controls */}
+                <div className="no-print mt-6 flex items-center justify-end space-x-3">
+                  <button
+                    onClick={() => setShowPrintModal(false)}
+                    className="px-4 py-2 bg-gray-200 dark:bg-gray-700 rounded-xl text-xs font-bold">
+                    Close
+                  </button>
+                  <button
+                    onClick={() => window.print()}
+                    className="px-4 py-2 bg-brand-600 text-white rounded-xl text-xs font-bold flex items-center space-x-1">
+                    <i data-lucide="printer" className="w-4 h-4"></i>
+                    <span>Print / Save PDF</span>
+                  </button>
+                </div>
+
+              </div>
+            </div>
+          )}
+
+        </div>
+      );
+    }
+
+    ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+  </script>
 </body>
 </html>
