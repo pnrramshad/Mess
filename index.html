@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
   <title>Invoicify - UAE Billing & Inventory System</title>
 
   <!-- Tailwind CSS -->
@@ -52,15 +52,25 @@
     }
     .no-scrollbar::-webkit-scrollbar { display: none; }
     .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+    
+    /* PREVENTS MOBILE BROWSER ZOOMING IN ON INPUT FOCUS */
+    input, select, textarea {
+      font-size: 16px !important;
+      touch-action: manipulation;
+    }
+    button {
+      touch-action: manipulation;
+      cursor: pointer;
+    }
+    .pb-safe { padding-bottom: env(safe-area-inset-bottom, 1rem); }
   </style>
 </head>
-<body class="bg-gray-50 text-gray-900 dark:bg-gray-900 dark:text-gray-100 min-h-screen transition-colors duration-200">
+<body class="bg-gray-50 text-gray-900 dark:bg-gray-900 dark:text-gray-100 min-h-screen transition-colors duration-200 antialiased selection:bg-brand-500 selection:text-white">
   <div id="root"></div>
 
   <script type="text/babel">
-    const { useState, useEffect, useMemo } = React;
+    const { useState, useEffect, useMemo, useRef } = React;
 
-    // Firebase Credentials for tharavad336
     const firebaseConfig = {
       apiKey: "AIzaSyDc113ArrZa-bBCvKl-3UEwi4pIAdtwmIA",
       authDomain: "tharavad336.firebaseapp.com",
@@ -75,8 +85,6 @@
       firebase.initializeApp(firebaseConfig);
     }
     const db = firebase.firestore();
-
-    // Strict Collection Path Helper (Prevents Permission Errors)
     const getCol = (colName) => db.collection('artifacts').doc('invoicify_app').collection('public').doc('data').collection(colName);
 
     const INITIAL_PRODUCTS = [
@@ -94,9 +102,9 @@
     function App() {
       const [theme, setTheme] = useState(localStorage.getItem('theme') || 'light');
       const [activeTab, setActiveTab] = useState('dashboard');
+      const [billsSubTab, setBillsSubTab] = useState('sales'); 
       const [syncStatus, setSyncStatus] = useState('Connecting...');
 
-      // Company Profile State
       const [company, setCompany] = useState(() => {
         const local = localStorage.getItem('inv_company');
         return local ? JSON.parse(local) : {
@@ -110,7 +118,6 @@
         };
       });
 
-      // Local Data States
       const [products, setProducts] = useState(() => {
         const local = localStorage.getItem('inv_products');
         return local ? JSON.parse(local) : INITIAL_PRODUCTS;
@@ -124,24 +131,35 @@
         return local ? JSON.parse(local) : [];
       });
 
-      // Cart State
+      // Cart & Billing State
       const [cart, setCart] = useState([]);
       const [selectedCustomer, setSelectedCustomer] = useState(INITIAL_CUSTOMERS[0]);
+      
+      // Customer Search Dropdown State in POS
+      const [customerSearchQuery, setCustomerSearchQuery] = useState('');
+      const [showCustDropdown, setShowCustDropdown] = useState(false);
+      const custDropdownRef = useRef(null);
+
       const [discount, setDiscount] = useState(0);
       const [discountType, setDiscountType] = useState('amount');
       const [paymentMethod, setPaymentMethod] = useState('cash');
       const [searchProduct, setSearchProduct] = useState('');
+      
+      const [convertingOrderNo, setConvertingOrderNo] = useState(null);
 
-      // Modal & View States
       const [activeInvoice, setActiveInvoice] = useState(null);
       const [showPrintModal, setShowPrintModal] = useState(false);
       const [searchInvoice, setSearchInvoice] = useState('');
+      const [showCheckoutConfirm, setShowCheckoutConfirm] = useState(false);
 
       const [showProdModal, setShowProdModal] = useState(false);
-      const [newProd, setNewProd] = useState({ name: '', code: '', price: '', stock: '', category: 'General' });
+      const [editingProd, setEditingProd] = useState(null);
+      const [prodForm, setProdForm] = useState({ name: '', code: '', price: '', stock: '', category: 'General' });
 
       const [showCustModal, setShowCustModal] = useState(false);
-      const [newCust, setNewCust] = useState({ name: '', trn: '', phone: '', email: '', address: '' });
+      const [editingCust, setEditingCust] = useState(null);
+      // Added mobile and email fields to customer form
+      const [custForm, setCustForm] = useState({ name: '', phone: '', email: '', trn: '', address: '' });
 
       useEffect(() => {
         if (theme === 'dark') {
@@ -152,13 +170,23 @@
         localStorage.setItem('theme', theme);
       }, [theme]);
 
-      // --- FIRESTORE LISTENERS WITH CORRECTED PATH ---
+      // Close customer search dropdown on outside click
       useEffect(() => {
-        // 1. Invoices Listener
+        const handleClickOutside = (e) => {
+          if (custDropdownRef.current && !custDropdownRef.current.contains(e.target)) {
+            setShowCustDropdown(false);
+          }
+        };
+        document.addEventListener('mousedown', handleClickOutside);
+        return () => document.removeEventListener('mousedown', handleClickOutside);
+      }, []);
+
+      // --- FIRESTORE REALTIME SYNC LISTENERS ---
+      useEffect(() => {
         const unsubInvoices = getCol('invoices').onSnapshot(
           (snapshot) => {
             const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-            if (data.length > 0) {
+            if (data.length >= 0) {
               setInvoices(data);
               localStorage.setItem('inv_invoices', JSON.stringify(data));
             }
@@ -170,7 +198,6 @@
           }
         );
 
-        // 2. Customers Listener
         const unsubCustomers = getCol('customers').onSnapshot(
           (snapshot) => {
             const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
@@ -183,7 +210,6 @@
           (err) => console.error("Customers sync error:", err)
         );
 
-        // 3. Products Listener
         const unsubProducts = getCol('products').onSnapshot(
           (snapshot) => {
             const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
@@ -195,7 +221,6 @@
           (err) => console.error("Products sync error:", err)
         );
 
-        // 4. Company Settings Listener
         const unsubCompany = getCol('settings').doc('company').onSnapshot(
           (doc) => {
             if (doc.exists) {
@@ -214,7 +239,6 @@
         };
       }, []);
 
-      // Local Caching Updates
       useEffect(() => { localStorage.setItem('inv_company', JSON.stringify(company)); }, [company]);
       useEffect(() => { localStorage.setItem('inv_products', JSON.stringify(products)); }, [products]);
       useEffect(() => { localStorage.setItem('inv_customers', JSON.stringify(customers)); }, [customers]);
@@ -224,7 +248,17 @@
         if (window.lucide) window.lucide.createIcons();
       });
 
-      // Cart Dynamic Calculations
+      const filteredCustomersForBilling = useMemo(() => {
+        if (!customerSearchQuery.trim()) return customers;
+        const q = customerSearchQuery.toLowerCase();
+        return customers.filter(c => 
+          (c.name && c.name.toLowerCase().includes(q)) ||
+          (c.phone && c.phone.toLowerCase().includes(q)) ||
+          (c.email && c.email.toLowerCase().includes(q)) ||
+          (c.trn && c.trn.toLowerCase().includes(q))
+        );
+      }, [customers, customerSearchQuery]);
+
       const cartCalculations = useMemo(() => {
         const subtotal = cart.reduce((acc, item) => acc + (item.price * item.qty), 0);
         let discAmount = 0;
@@ -270,16 +304,22 @@
         }
       };
 
-      // Checkout
-      const handleCheckout = async () => {
+      const startCheckout = () => {
         if (cart.length === 0) {
-          alert("Please add items to invoice before checking out.");
+          alert("Please add items to invoice before proceeding.");
           return;
         }
+        setShowCheckoutConfirm(true);
+      };
 
-        const invoiceNum = `INV-${new Date().getFullYear()}-${String(invoices.length + 1).padStart(4, '0')}`;
-        const newInvoice = {
-          invoiceNumber: invoiceNum,
+      const confirmAndSaveOrder = async (orderType) => {
+        const isTaxInvoice = orderType === 'TAX_INVOICE';
+        const prefix = isTaxInvoice ? 'INV' : 'SO';
+        const docNumber = `${prefix}-${new Date().getFullYear()}-${String(invoices.length + 1).padStart(4, '0')}`;
+        
+        const newDoc = {
+          invoiceNumber: docNumber,
+          type: isTaxInvoice ? 'Tax Invoice' : 'Sales Order',
           date: new Date().toISOString(),
           customer: selectedCustomer,
           items: cart,
@@ -291,170 +331,204 @@
           vatRate: company.vatPercent,
           grandTotal: cartCalculations.grandTotal,
           paymentMethod: paymentMethod,
-          status: 'Paid'
+          status: isTaxInvoice ? 'Paid' : 'Sales Order',
+          preOrderReference: convertingOrderNo || null
         };
 
-        // Update local stock
-        const updatedProducts = products.map(p => {
-          const cartItem = cart.find(c => c.id === p.id);
-          if (cartItem) {
-            const newStock = Math.max(0, p.stock - cartItem.qty);
-            if (p.id && !p.id.startsWith('p1') && !p.id.startsWith('p2') && !p.id.startsWith('p3') && !p.id.startsWith('p4')) {
-              getCol('products').doc(p.id).update({ stock: newStock }).catch(e => console.error(e));
+        if (isTaxInvoice) {
+          const updatedProducts = products.map(p => {
+            const cartItem = cart.find(c => c.id === p.id);
+            if (cartItem) {
+              const newStock = Math.max(0, p.stock - cartItem.qty);
+              if (p.id) {
+                getCol('products').doc(p.id).update({ stock: newStock }).catch(e => console.error(e));
+              }
+              return { ...p, stock: newStock };
             }
-            return { ...p, stock: newStock };
-          }
-          return p;
-        });
+            return p;
+          });
+          setProducts(updatedProducts);
 
-        setProducts(updatedProducts);
-        setInvoices([newInvoice, ...invoices]);
+          if (convertingOrderNo) {
+            try {
+              const snap = await getCol('invoices').where('invoiceNumber', '==', convertingOrderNo).get();
+              snap.forEach(docSnap => docSnap.ref.delete());
+            } catch(e) {
+              console.error("Error deleting old sales order:", e);
+            }
+          }
+        }
 
         try {
-          await getCol('invoices').add(newInvoice);
-          console.log("Invoice saved to Cloud!");
+          await getCol('invoices').add(newDoc);
         } catch (e) {
           console.error("Cloud save error:", e);
         }
 
+        setShowCheckoutConfirm(false);
         setCart([]);
         setDiscount(0);
-        setActiveInvoice(newInvoice);
+        setConvertingOrderNo(null);
+        setActiveInvoice(newDoc);
         setShowPrintModal(true);
       };
 
-      // Refund Invoice
-      const handleRefundInvoice = async (inv) => {
-        if (!confirm(`Are you sure you want to refund Invoice ${inv.invoiceNumber}? Stock will be restored.`)) return;
+      const redirectToBillingWithOrder = (salesOrder) => {
+        setCart(salesOrder.items || []);
+        if (salesOrder.customer) {
+          const matchCust = customers.find(c => c.name === salesOrder.customer.name) || salesOrder.customer;
+          setSelectedCustomer(matchCust);
+          setCustomerSearchQuery(matchCust.name || '');
+        }
+        setDiscount(salesOrder.discount || 0);
+        setDiscountType('amount');
+        setPaymentMethod(salesOrder.paymentMethod || 'cash');
+        setConvertingOrderNo(salesOrder.invoiceNumber);
+        setActiveTab('pos');
+      };
 
-        const updatedProducts = products.map(p => {
-          const itemFound = inv.items.find(i => i.id === p.id);
-          if (itemFound) {
-            return { ...p, stock: p.stock + itemFound.qty };
-          }
-          return p;
+      const openAddCustomer = () => {
+        setEditingCust(null);
+        setCustForm({ name: '', phone: '', email: '', trn: '', address: '' });
+        setShowCustModal(true);
+      };
+
+      const openEditCustomer = (cust) => {
+        setEditingCust(cust);
+        setCustForm({
+          name: cust.name || '',
+          phone: cust.phone || '',
+          email: cust.email || '',
+          trn: cust.trn || '',
+          address: cust.address || ''
         });
+        setShowCustModal(true);
+      };
 
-        const updatedInvoices = invoices.map(i => i.invoiceNumber === inv.invoiceNumber ? { ...i, status: 'Returned' } : i);
-        setProducts(updatedProducts);
-        setInvoices(updatedInvoices);
+      const handleSaveCustomer = async (e) => {
+        e.preventDefault();
+        if (!custForm.name) return;
+        const payload = {
+          name: custForm.name,
+          phone: custForm.phone || 'N/A',
+          email: custForm.email || 'N/A',
+          trn: custForm.trn || 'N/A',
+          address: custForm.address || 'UAE'
+        };
+        if (editingCust && editingCust.id) {
+          try { 
+            await getCol('customers').doc(editingCust.id).update(payload); 
+          } catch(err) { console.error(err); }
+        } else {
+          try { 
+            const docRef = await getCol('customers').add({ ...payload, createdAt: new Date().toISOString() });
+            setSelectedCustomer({ id: docRef.id, ...payload });
+            setCustomerSearchQuery(payload.name);
+          } catch(err) { console.error(err); }
+        }
+        setShowCustModal(false);
+      };
 
+      const handleDeleteCustomer = async (cust) => {
+        if (!confirm(`Delete customer "${cust.name}"?`)) return;
+        if (cust.id) {
+          try { await getCol('customers').doc(cust.id).delete(); } catch(e) { console.error(e); }
+        }
+      };
+
+      const openAddProduct = () => {
+        setEditingProd(null);
+        setProdForm({ name: '', code: '', price: '', stock: '', category: 'General' });
+        setShowProdModal(true);
+      };
+
+      const openEditProduct = (prod) => {
+        setEditingProd(prod);
+        setProdForm({
+          name: prod.name || '',
+          code: prod.code || '',
+          price: prod.price || '',
+          stock: prod.stock || 0,
+          category: prod.category || 'General'
+        });
+        setShowProdModal(true);
+      };
+
+      const handleSaveProduct = async (e) => {
+        e.preventDefault();
+        if (!prodForm.name || !prodForm.price) return;
+        const payload = {
+          name: prodForm.name,
+          code: prodForm.code || 'PRD-' + (products.length + 1),
+          price: parseFloat(prodForm.price) || 0,
+          stock: parseInt(prodForm.stock) || 0,
+          vatRate: company.vatPercent,
+          category: prodForm.category || 'General'
+        };
+        if (editingProd && editingProd.id) {
+          try { await getCol('products').doc(editingProd.id).update(payload); } catch(err) { console.error(err); }
+        } else {
+          try { await getCol('products').add({ ...payload, createdAt: new Date().toISOString() }); } catch(err) { console.error(err); }
+        }
+        setShowProdModal(false);
+      };
+
+      const handleDeleteProduct = async (prod) => {
+        if (!confirm(`Delete product "${prod.name}"?`)) return;
+        if (prod.id) {
+          try { await getCol('products').doc(prod.id).delete(); } catch(e) { console.error(e); }
+        }
+      };
+
+      const handleDeleteBill = async (inv) => {
+        if (!confirm(`Delete document ${inv.invoiceNumber}?`)) return;
         if (inv.id) {
           try {
-            await getCol('invoices').doc(inv.id).update({ status: 'Returned' });
+            await getCol('invoices').doc(inv.id).delete();
           } catch(e) {
             console.error(e);
           }
         }
       };
 
-      // ADD PRODUCT TO CLOUD
-      const handleCreateProduct = async (e) => {
-        e.preventDefault();
-        if (!newProd.name || !newProd.price) {
-          alert('Please fill out Product Name and Price');
-          return;
-        }
-
-        const createdProduct = {
-          name: newProd.name,
-          code: newProd.code || 'PRD-' + (products.length + 1),
-          price: parseFloat(newProd.price) || 0,
-          stock: parseInt(newProd.stock) || 0,
-          vatRate: company.vatPercent,
-          category: newProd.category || 'General',
-          createdAt: new Date().toISOString()
-        };
-
-        setProducts(prev => [...prev, createdProduct]);
-        setNewProd({ name: '', code: '', price: '', stock: '', category: 'General' });
-        setShowProdModal(false);
-
-        try {
-          await getCol('products').add(createdProduct);
-          console.log("Product saved to Cloud!");
-        } catch(err) {
-          console.error("Cloud Product Save Error:", err);
-          alert("Saved locally. Cloud Error: " + err.message);
-        }
-      };
-
-      // ADD CUSTOMER TO CLOUD (FIXED PATH)
-      const handleCreateCustomer = async (e) => {
-        e.preventDefault();
-        if (!newCust.name) {
-          alert('Please enter Customer Name');
-          return;
-        }
-
-        const createdCustomer = {
-          name: newCust.name,
-          trn: newCust.trn || 'N/A',
-          phone: newCust.phone || 'N/A',
-          email: newCust.email || 'N/A',
-          address: newCust.address || 'UAE',
-          createdAt: new Date().toISOString()
-        };
-
-        setCustomers(prev => [...prev, createdCustomer]);
-        setSelectedCustomer(createdCustomer);
-        setNewCust({ name: '', trn: '', phone: '', email: '', address: '' });
-        setShowCustModal(false);
-
-        try {
-          await getCol('customers').add(createdCustomer);
-          console.log("Customer saved to Cloud!");
-        } catch(err) {
-          console.error("Cloud Customer Save Error:", err);
-          alert("Saved locally. Cloud Error: " + err.message);
-        }
-      };
-
-      // SAVE COMPANY SETTINGS TO CLOUD
       const handleSaveCompany = async () => {
         try {
           await getCol('settings').doc('company').set(company);
           alert("Company settings saved to Cloud!");
         } catch(e) {
-          console.error(e);
-          alert("Saved locally. Cloud Error: " + e.message);
+          alert("Error saving: " + e.message);
         }
       };
 
-      // Dashboard Calculations
       const stats = useMemo(() => {
         const todayStr = new Date().toISOString().split('T')[0];
-        const activeInvoices = invoices.filter(i => i.status !== 'Returned');
-
+        const activeInvoices = invoices.filter(i => i.status === 'Paid');
         const totalRevenue = activeInvoices.reduce((a, b) => a + (b.grandTotal || 0), 0);
         const totalVat = activeInvoices.reduce((a, b) => a + (b.vatAmount || 0), 0);
         const todaySales = activeInvoices
           .filter(i => i.date && i.date.startsWith(todayStr))
           .reduce((a, b) => a + (b.grandTotal || 0), 0);
-
         const lowStockCount = products.filter(p => p.stock <= 10).length;
-
         return { totalRevenue, totalVat, todaySales, count: activeInvoices.length, lowStockCount };
       }, [invoices, products]);
+
+      const salesInvoices = useMemo(() => invoices.filter(i => i.status === 'Paid' || i.status === 'Returned' || i.type === 'Tax Invoice'), [invoices]);
+      const salesOrders = useMemo(() => invoices.filter(i => i.status === 'Sales Order' || i.type === 'Sales Order'), [invoices]);
 
       return (
         <div className="flex flex-col md:flex-row min-h-screen">
           {/* Sidebar */}
-          <aside className="no-print bg-white dark:bg-gray-800 border-r border-gray-200 dark:border-gray-700 w-full md:w-64 flex-shrink-0 flex flex-col justify-between">
+          <aside className="no-print hidden md:flex bg-white dark:bg-gray-800 border-r border-gray-200 dark:border-gray-700 w-64 flex-shrink-0 flex-col justify-between">
             <div>
               <div className="p-4 border-b border-gray-200 dark:border-gray-700 flex items-center justify-between">
                 <div className="flex items-center space-x-3">
-                  <div className="w-10 h-10 rounded-xl bg-brand-600 flex items-center justify-center text-white font-bold text-lg shadow-md">
-                    🇦🇪
-                  </div>
+                  <div className="w-10 h-10 rounded-xl bg-brand-600 flex items-center justify-center text-white font-bold text-lg shadow-md">🇦🇪</div>
                   <div>
                     <h1 className="font-bold text-sm leading-tight line-clamp-1">{company.name}</h1>
                     <span className="text-xs text-gray-500">TRN: {company.trn}</span>
                   </div>
                 </div>
-                <button 
-                  onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
-                  className="p-2 rounded-lg bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300">
+                <button onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')} className="p-2 rounded-lg bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300">
                   <i data-lucide={theme === 'dark' ? 'sun' : 'moon'} className="w-4 h-4"></i>
                 </button>
               </div>
@@ -472,9 +546,7 @@
                     key={nav.id}
                     onClick={() => setActiveTab(nav.id)}
                     className={`w-full flex items-center space-x-3 px-3 py-2.5 rounded-lg font-medium text-sm transition-all ${
-                      activeTab === nav.id 
-                        ? 'bg-brand-600 text-white shadow-md' 
-                        : 'text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700/50'
+                      activeTab === nav.id ? 'bg-brand-600 text-white shadow-md' : 'text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700/50'
                     }`}>
                     <i data-lucide={nav.icon} className="w-4 h-4"></i>
                     <span>{nav.label}</span>
@@ -491,36 +563,48 @@
             </div>
           </aside>
 
+          {/* Mobile Top Header */}
+          <div className="no-print md:hidden bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700 p-3 flex items-center justify-between sticky top-0 z-30 shadow-sm">
+            <div className="flex items-center space-x-2">
+              <div className="w-8 h-8 rounded-lg bg-brand-600 flex items-center justify-center text-white font-bold text-xs">🇦🇪</div>
+              <div>
+                <h1 className="font-bold text-xs line-clamp-1">{company.name}</h1>
+                <span className="text-[10px] text-emerald-600 font-semibold">{syncStatus}</span>
+              </div>
+            </div>
+            <button onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')} className="p-1.5 rounded-lg bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300">
+              <i data-lucide={theme === 'dark' ? 'sun' : 'moon'} className="w-4 h-4"></i>
+            </button>
+          </div>
+
           {/* Main Area */}
-          <main className="flex-1 overflow-y-auto p-4 md:p-6 mb-16 md:mb-0">
-            
-            {/* 1. DASHBOARD */}
+          <main className="flex-1 overflow-y-auto p-3 sm:p-4 md:p-6 pb-24 md:pb-6 max-w-full">
             {activeTab === 'dashboard' && (
-              <div className="space-y-6">
+              <div className="space-y-4 md:space-y-6">
                 <div className="flex items-center justify-between">
-                  <h2 className="text-2xl font-bold">Sales Overview</h2>
-                  <button onClick={() => setActiveTab('pos')} className="bg-brand-600 text-white px-4 py-2 rounded-xl text-sm font-semibold flex items-center space-x-2">
+                  <h2 className="text-lg md:text-2xl font-bold">Sales Overview</h2>
+                  <button onClick={() => setActiveTab('pos')} className="bg-brand-600 text-white px-3 py-2 rounded-xl text-xs md:text-sm font-semibold flex items-center space-x-1 shadow">
                     <i data-lucide="plus" className="w-4 h-4"></i>
                     <span>New Bill</span>
                   </button>
                 </div>
 
-                <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-                  <div className="bg-white dark:bg-gray-800 p-4 rounded-2xl border border-gray-100 dark:border-gray-700 shadow-sm">
-                    <span className="text-xs font-semibold text-gray-500 uppercase">Total Revenue</span>
-                    <div className="text-xl font-extrabold mt-1">{stats.totalRevenue.toFixed(2)} AED</div>
+                <div className="grid grid-cols-2 lg:grid-cols-4 gap-2.5 md:gap-4">
+                  <div className="bg-white dark:bg-gray-800 p-3 md:p-4 rounded-2xl border border-gray-100 dark:border-gray-700 shadow-sm">
+                    <span className="text-[10px] md:text-xs font-semibold text-gray-500 uppercase">Total Revenue</span>
+                    <div className="text-base md:text-xl font-extrabold mt-1">{stats.totalRevenue.toFixed(2)} AED</div>
                   </div>
-                  <div className="bg-white dark:bg-gray-800 p-4 rounded-2xl border border-gray-100 dark:border-gray-700 shadow-sm">
-                    <span className="text-xs font-semibold text-gray-500 uppercase">Today's Sales</span>
-                    <div className="text-xl font-extrabold mt-1">{stats.todaySales.toFixed(2)} AED</div>
+                  <div className="bg-white dark:bg-gray-800 p-3 md:p-4 rounded-2xl border border-gray-100 dark:border-gray-700 shadow-sm">
+                    <span className="text-[10px] md:text-xs font-semibold text-gray-500 uppercase">Today's Sales</span>
+                    <div className="text-base md:text-xl font-extrabold mt-1">{stats.todaySales.toFixed(2)} AED</div>
                   </div>
-                  <div className="bg-white dark:bg-gray-800 p-4 rounded-2xl border border-gray-100 dark:border-gray-700 shadow-sm">
-                    <span className="text-xs font-semibold text-gray-500 uppercase">UAE VAT (5%)</span>
-                    <div className="text-xl font-extrabold mt-1">{stats.totalVat.toFixed(2)} AED</div>
+                  <div className="bg-white dark:bg-gray-800 p-3 md:p-4 rounded-2xl border border-gray-100 dark:border-gray-700 shadow-sm">
+                    <span className="text-[10px] md:text-xs font-semibold text-gray-500 uppercase">UAE VAT (5%)</span>
+                    <div className="text-base md:text-xl font-extrabold mt-1">{stats.totalVat.toFixed(2)} AED</div>
                   </div>
-                  <div className="bg-white dark:bg-gray-800 p-4 rounded-2xl border border-gray-100 dark:border-gray-700 shadow-sm">
-                    <span className="text-xs font-semibold text-gray-500 uppercase">Total Bills</span>
-                    <div className="text-xl font-extrabold mt-1">{stats.count}</div>
+                  <div className="bg-white dark:bg-gray-800 p-3 md:p-4 rounded-2xl border border-gray-100 dark:border-gray-700 shadow-sm">
+                    <span className="text-[10px] md:text-xs font-semibold text-gray-500 uppercase">Tax Invoices</span>
+                    <div className="text-base md:text-xl font-extrabold mt-1">{stats.count}</div>
                   </div>
                 </div>
 
@@ -528,282 +612,220 @@
                   <div className="bg-amber-50 dark:bg-amber-900/30 border border-amber-200 dark:border-amber-800 rounded-xl p-3 flex items-center justify-between text-xs text-amber-800 dark:text-amber-200">
                     <div className="flex items-center space-x-2">
                       <i data-lucide="alert-triangle" className="w-4 h-4 text-amber-600"></i>
-                      <span><strong>{stats.lowStockCount} items</strong> are low on stock (&le; 10 remaining).</span>
+                      <span><strong>{stats.lowStockCount} items</strong> low on stock.</span>
                     </div>
-                    <button onClick={() => setActiveTab('products')} className="font-bold underline">Manage Stock</button>
+                    <button onClick={() => setActiveTab('products')} className="font-bold underline">Check Stock</button>
                   </div>
                 )}
-
-                <div className="bg-white dark:bg-gray-800 rounded-2xl border border-gray-100 dark:border-gray-700 overflow-hidden shadow-sm">
-                  <div className="p-4 border-b border-gray-100 dark:border-gray-700 font-bold text-sm">Recent Transactions</div>
-                  <table className="w-full text-left text-sm">
-                    <thead className="bg-gray-50 dark:bg-gray-700/50 text-xs text-gray-500 uppercase">
-                      <tr>
-                        <th className="p-3">Invoice #</th>
-                        <th className="p-3">Customer</th>
-                        <th className="p-3">Amount</th>
-                        <th className="p-3">Status</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-gray-100 dark:divide-gray-700">
-                      {invoices.slice(0, 5).map((inv, idx) => (
-                        <tr key={idx}>
-                          <td className="p-3 font-semibold text-brand-600">{inv.invoiceNumber}</td>
-                          <td className="p-3">{inv.customer?.name}</td>
-                          <td className="p-3 font-bold">{inv.grandTotal?.toFixed(2)} AED</td>
-                          <td className="p-3">
-                            <span className={`text-xs px-2 py-0.5 rounded-full font-bold ${inv.status === 'Paid' ? 'bg-emerald-100 text-emerald-700' : 'bg-red-100 text-red-700'}`}>
-                              {inv.status}
-                            </span>
-                          </td>
-                        </tr>
-                      ))}
-                      {invoices.length === 0 && (
-                        <tr><td colSpan="4" className="p-6 text-center text-gray-400">No invoices generated yet.</td></tr>
-                      )}
-                    </tbody>
-                  </table>
-                </div>
               </div>
             )}
 
-            {/* 2. POS BILLING */}
             {activeTab === 'pos' && (
-              <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-                <div className="lg:col-span-7 space-y-4">
+              <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 md:gap-6">
+                <div className="lg:col-span-7 space-y-3 md:space-y-4">
                   <div className="flex items-center justify-between">
-                    <h2 className="text-xl font-bold">Select Products</h2>
-                    <input
-                      type="text"
-                      placeholder="Search product..."
-                      value={searchProduct}
-                      onChange={(e) => setSearchProduct(e.target.value)}
-                      className="p-2 text-xs bg-white dark:bg-gray-800 border rounded-xl w-48"
-                    />
+                    <h2 className="text-base md:text-xl font-bold">Select Items</h2>
+                    <input type="text" placeholder="Search items..." value={searchProduct} onChange={(e) => setSearchProduct(e.target.value)} className="p-1.5 md:p-2 text-xs bg-white dark:bg-gray-800 border rounded-xl w-36 md:w-48" />
                   </div>
+                  
+                  {convertingOrderNo && (
+                    <div className="bg-amber-50 dark:bg-amber-900/30 border border-amber-200 p-2 rounded-xl text-xs flex justify-between items-center text-amber-800 dark:text-amber-200">
+                      <span>⚡ Converting Pre-Order: <strong>{convertingOrderNo}</strong></span>
+                      <button onClick={() => { setConvertingOrderNo(null); setCart([]); }} className="underline font-bold">Cancel</button>
+                    </div>
+                  )}
 
-                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 max-h-[calc(100vh-220px)] overflow-y-auto">
-                    {products
-                      .filter(p => p.name.toLowerCase().includes(searchProduct.toLowerCase()) || p.code?.toLowerCase().includes(searchProduct.toLowerCase()))
-                      .map((product, idx) => (
-                        <div
-                          key={product.id || idx}
-                          onClick={() => addToCart(product)}
-                          className="bg-white dark:bg-gray-800 p-3 rounded-2xl border border-gray-100 dark:border-gray-700 hover:border-brand-500 cursor-pointer shadow-sm flex flex-col justify-between">
-                          <div>
-                            <div className="flex justify-between text-[10px] text-gray-400 font-bold mb-1">
-                              <span>{product.code || 'PRD'}</span>
-                              <span className={product.stock <= 10 ? 'text-amber-600' : ''}>{product.stock} stock</span>
-                            </div>
-                            <h4 className="font-semibold text-xs line-clamp-2">{product.name}</h4>
+                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 md:gap-3 max-h-[40vh] lg:max-h-[calc(100vh-220px)] overflow-y-auto">
+                    {products.filter(p => p.name.toLowerCase().includes(searchProduct.toLowerCase())).map((product, idx) => (
+                      <div key={product.id || idx} onClick={() => addToCart(product)} className="bg-white dark:bg-gray-800 p-2.5 md:p-3 rounded-2xl border border-gray-100 dark:border-gray-700 hover:border-brand-500 cursor-pointer shadow-sm flex flex-col justify-between">
+                        <div>
+                          <div className="flex justify-between text-[10px] text-gray-400 font-bold mb-1">
+                            <span>{product.code || 'PRD'}</span>
+                            <span className={product.stock <= 10 ? 'text-amber-600' : ''}>{product.stock} left</span>
                           </div>
-                          <div className="mt-2 font-bold text-sm text-brand-600">{product.price.toFixed(2)} AED</div>
+                          <h4 className="font-semibold text-xs line-clamp-2">{product.name}</h4>
                         </div>
+                        <div className="mt-2 font-bold text-xs md:text-sm text-brand-600">{product.price.toFixed(2)} AED</div>
+                      </div>
                     ))}
                   </div>
                 </div>
 
-                <div className="lg:col-span-5 bg-white dark:bg-gray-800 rounded-2xl border border-gray-100 dark:border-gray-700 p-4 shadow-md flex flex-col justify-between">
+                <div className="lg:col-span-5 bg-white dark:bg-gray-800 rounded-2xl border border-gray-100 dark:border-gray-700 p-3 md:p-4 shadow-md flex flex-col justify-between">
                   <div>
-                    <div className="flex items-center justify-between mb-2">
-                      <h3 className="font-bold text-sm">Invoice Summary</h3>
-                      <button onClick={() => setShowCustModal(true)} className="text-xs text-brand-600 font-bold hover:underline">+ Add Customer</button>
+                    <div className="flex items-center justify-between mb-1">
+                      <h3 className="font-bold text-xs md:text-sm">Invoice Cart & Customer</h3>
+                      <button onClick={openAddCustomer} className="text-xs text-brand-600 font-bold hover:underline">+ New Cust</button>
                     </div>
 
-                    <select
-                      value={selectedCustomer?.id || ''}
-                      onChange={(e) => setSelectedCustomer(customers.find(c => c.id === e.target.value) || customers[0])}
-                      className="w-full p-2 text-xs bg-gray-50 dark:bg-gray-700 border rounded-xl mb-3">
-                      {customers.map((c, idx) => (
-                        <option key={c.id || idx} value={c.id}>{c.name} {c.trn && c.trn !== 'N/A' ? `(TRN: ${c.trn})` : ''}</option>
-                      ))}
-                    </select>
+                    {/* EASY CUSTOMER SEARCH AUTOCOMPLETE INPUT */}
+                    <div className="relative mb-3" ref={custDropdownRef}>
+                      <label className="text-[10px] text-gray-400 font-bold block mb-1">Search Customer by Name / Mobile / Email:</label>
+                      <input
+                        type="text"
+                        placeholder="Type name, phone or email..."
+                        value={customerSearchQuery}
+                        onFocus={() => setShowCustDropdown(true)}
+                        onChange={(e) => {
+                          setCustomerSearchQuery(e.target.value);
+                          setShowCustDropdown(true);
+                        }}
+                        className="w-full p-2 text-xs bg-gray-50 dark:bg-gray-700 border rounded-xl"
+                      />
+                      {showCustDropdown && (
+                        <div className="absolute left-0 right-0 top-full mt-1 bg-white dark:bg-gray-800 border dark:border-gray-700 rounded-xl shadow-xl max-h-48 overflow-y-auto z-20">
+                          {filteredCustomersForBilling.map((c, idx) => (
+                            <div
+                              key={c.id || idx}
+                              onClick={() => {
+                                setSelectedCustomer(c);
+                                setCustomerSearchQuery(c.name);
+                                setShowCustDropdown(false);
+                              }}
+                              className="p-2 text-xs hover:bg-brand-50 dark:hover:bg-gray-700 cursor-pointer border-b last:border-b-0 border-gray-100 dark:border-gray-700">
+                              <div className="font-bold">{c.name}</div>
+                              <div className="text-[10px] text-gray-400">📱 {c.phone} | ✉️ {c.email || 'N/A'} {c.trn !== 'N/A' ? `| TRN: ${c.trn}` : ''}</div>
+                            </div>
+                          ))}
+                          {filteredCustomersForBilling.length === 0 && (
+                            <div className="p-3 text-xs text-gray-400 text-center">No customers found.</div>
+                          )}
+                        </div>
+                      )}
+                    </div>
 
-                    <div className="space-y-2 max-h-48 overflow-y-auto border-t border-b border-gray-100 dark:border-gray-700 py-2">
+                    <div className="space-y-2 max-h-36 md:max-h-48 overflow-y-auto border-t border-b border-gray-100 dark:border-gray-700 py-2">
                       {cart.map(item => (
                         <div key={item.id || item.name} className="flex items-center justify-between text-xs">
-                          <div className="flex-1 pr-2">
-                            <span className="font-bold">{item.name}</span>
-                            <div className="text-[10px] text-gray-400">{item.price.toFixed(2)} AED</div>
-                          </div>
+                          <div className="flex-1 pr-2"><span className="font-bold line-clamp-1">{item.name}</span></div>
                           <div className="flex items-center space-x-2">
-                            <button onClick={() => updateCartQty(item.id, item.qty - 1)} className="w-5 h-5 bg-gray-100 dark:bg-gray-700 rounded font-bold">-</button>
-                            <span>{item.qty}</span>
-                            <button onClick={() => updateCartQty(item.id, item.qty + 1)} className="w-5 h-5 bg-gray-100 dark:bg-gray-700 rounded font-bold">+</button>
+                            <button onClick={() => updateCartQty(item.id, item.qty - 1)} className="w-6 h-6 bg-gray-100 dark:bg-gray-700 rounded font-bold">-</button>
+                            <span className="w-4 text-center font-bold">{item.qty}</span>
+                            <button onClick={() => updateCartQty(item.id, item.qty + 1)} className="w-6 h-6 bg-gray-100 dark:bg-gray-700 rounded font-bold">+</button>
                             <span className="font-bold w-12 text-right">{(item.price * item.qty).toFixed(2)}</span>
                           </div>
                         </div>
                       ))}
-                      {cart.length === 0 && <div className="text-xs text-gray-400 text-center py-6">Cart is empty. Tap products to add.</div>}
-                    </div>
-
-                    <div className="space-y-2 pt-3 text-xs">
-                      <div className="flex items-center justify-between">
-                        <span className="text-gray-500">Discount:</span>
-                        <div className="flex items-center space-x-1">
-                          <input type="number" min="0" value={discount} onChange={(e) => setDiscount(parseFloat(e.target.value) || 0)} className="w-16 p-1 border rounded text-xs text-right" />
-                          <select value={discountType} onChange={(e) => setDiscountType(e.target.value)} className="p-1 border rounded text-xs">
-                            <option value="amount">AED</option>
-                            <option value="percent">%</option>
-                          </select>
-                        </div>
-                      </div>
-
-                      <div className="flex items-center justify-between">
-                        <span className="text-gray-500">Payment Method:</span>
-                        <select value={paymentMethod} onChange={(e) => setPaymentMethod(e.target.value)} className="p-1 border rounded text-xs capitalize">
-                          <option value="cash">Cash</option>
-                          <option value="card">Card</option>
-                          <option value="bank">Bank Transfer</option>
-                        </select>
-                      </div>
+                      {cart.length === 0 && <div className="text-xs text-gray-400 text-center py-6">Cart is empty.</div>}
                     </div>
                   </div>
-
                   <div className="pt-3 border-t border-gray-100 dark:border-gray-700 space-y-1 text-xs mt-3">
-                    <div className="flex justify-between"><span>Subtotal:</span><span>{cartCalculations.subtotal.toFixed(2)} AED</span></div>
-                    {cartCalculations.discAmount > 0 && <div className="flex justify-between text-red-500"><span>Discount:</span><span>-{cartCalculations.discAmount.toFixed(2)} AED</span></div>}
-                    <div className="flex justify-between"><span>VAT ({company.vatPercent}%):</span><span>{cartCalculations.vatTotal.toFixed(2)} AED</span></div>
-                    <div className="flex justify-between font-extrabold text-base text-brand-600 pt-1 border-t"><span>Grand Total:</span><span>{cartCalculations.grandTotal.toFixed(2)} AED</span></div>
-                    
-                    <button onClick={handleCheckout} className="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-3 rounded-xl shadow-md mt-2 flex items-center justify-center space-x-2">
-                      <i data-lucide="check-circle" className="w-4 h-4"></i>
-                      <span>Generate Tax Invoice</span>
-                    </button>
+                    <div className="flex justify-between"><span>Grand Total:</span><span className="font-bold text-sm text-brand-600">{cartCalculations.grandTotal.toFixed(2)} AED</span></div>
+                    <button onClick={startCheckout} className="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-3 rounded-xl shadow-md mt-2">Confirm & Make Sale</button>
                   </div>
                 </div>
               </div>
             )}
 
-            {/* 3. INVOICES */}
             {activeTab === 'invoices' && (
               <div className="space-y-4">
-                <div className="flex items-center justify-between">
-                  <h2 className="text-xl font-bold">Invoices & Receipts</h2>
-                  <input
-                    type="text"
-                    placeholder="Search bill # or customer..."
-                    value={searchInvoice}
-                    onChange={(e) => setSearchInvoice(e.target.value)}
-                    className="p-2 text-xs bg-white dark:bg-gray-800 border rounded-xl w-64"
-                  />
+                <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+                  <h2 className="text-base md:text-xl font-bold">Billing Records</h2>
+                  <input type="text" placeholder="Search bill..." value={searchInvoice} onChange={(e) => setSearchInvoice(e.target.value)} className="p-1.5 md:p-2 text-xs bg-white dark:bg-gray-800 border rounded-xl w-full sm:w-64" />
                 </div>
 
-                <div className="bg-white dark:bg-gray-800 rounded-2xl border border-gray-100 dark:border-gray-700 overflow-hidden shadow-sm">
-                  <table className="w-full text-left text-sm">
-                    <thead className="bg-gray-50 dark:bg-gray-700/50 text-xs text-gray-500 uppercase">
-                      <tr>
-                        <th className="p-3">Invoice #</th>
-                        <th className="p-3">Date</th>
-                        <th className="p-3">Customer</th>
-                        <th className="p-3">VAT (5%)</th>
-                        <th className="p-3">Total</th>
-                        <th className="p-3">Status</th>
-                        <th className="p-3 text-right">Action</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-gray-100 dark:divide-gray-700">
-                      {invoices
-                        .filter(i => i.invoiceNumber?.toLowerCase().includes(searchInvoice.toLowerCase()) || i.customer?.name?.toLowerCase().includes(searchInvoice.toLowerCase()))
-                        .map((inv, idx) => (
-                          <tr key={idx}>
-                            <td className="p-3 font-bold text-brand-600">{inv.invoiceNumber}</td>
-                            <td className="p-3 text-xs">{new Date(inv.date).toLocaleDateString()}</td>
-                            <td className="p-3">{inv.customer?.name}</td>
-                            <td className="p-3">{inv.vatAmount?.toFixed(2)} AED</td>
-                            <td className="p-3 font-bold">{inv.grandTotal?.toFixed(2)} AED</td>
-                            <td className="p-3">
-                              <span className={`text-xs px-2 py-0.5 rounded-full font-bold ${inv.status === 'Paid' ? 'bg-emerald-100 text-emerald-700' : 'bg-red-100 text-red-700'}`}>
-                                {inv.status}
-                              </span>
-                            </td>
-                            <td className="p-3 text-right space-x-2">
-                              <button onClick={() => { setActiveInvoice(inv); setShowPrintModal(true); }} className="p-1.5 bg-gray-100 dark:bg-gray-700 rounded-lg">
-                                <i data-lucide="printer" className="w-4 h-4"></i>
-                              </button>
-                              {inv.status !== 'Returned' && (
-                                <button onClick={() => handleRefundInvoice(inv)} className="p-1.5 bg-red-50 text-red-600 rounded-lg" title="Refund Invoice">
-                                  <i data-lucide="rotate-ccw" className="w-4 h-4"></i>
-                                </button>
-                              )}
-                            </td>
-                          </tr>
-                        ))}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-            )}
-
-            {/* 4. STOCK */}
-            {activeTab === 'products' && (
-              <div className="space-y-4">
-                <div className="flex items-center justify-between">
-                  <h2 className="text-xl font-bold">Products & Stock Inventory</h2>
-                  <button onClick={() => setShowProdModal(true)} className="bg-brand-600 text-white px-3 py-2 rounded-xl text-xs font-bold flex items-center space-x-1">
-                    <i data-lucide="plus" className="w-4 h-4"></i>
-                    <span>Add Product</span>
+                <div className="flex border-b border-gray-200 dark:border-gray-700">
+                  <button onClick={() => setBillsSubTab('sales')} className={`pb-2.5 px-4 font-bold text-xs md:text-sm border-b-2 ${billsSubTab === 'sales' ? 'border-brand-600 text-brand-600' : 'border-transparent text-gray-500'}`}>
+                    Sales Invoices ({salesInvoices.length})
+                  </button>
+                  <button onClick={() => setBillsSubTab('orders')} className={`pb-2.5 px-4 font-bold text-xs md:text-sm border-b-2 ${billsSubTab === 'orders' ? 'border-brand-600 text-brand-600' : 'border-transparent text-gray-500'}`}>
+                    Sales Orders ({salesOrders.length})
                   </button>
                 </div>
 
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                {billsSubTab === 'sales' && (
+                  <div className="bg-white dark:bg-gray-800 rounded-2xl border overflow-hidden shadow-sm">
+                    <table className="w-full text-left text-xs md:text-sm">
+                      <thead className="bg-gray-50 dark:bg-gray-700/50 text-[10px] uppercase">
+                        <tr><th className="p-3">Doc #</th><th className="p-3">Customer</th><th className="p-3">Total</th><th className="p-3 text-right">Actions</th></tr>
+                      </thead>
+                      <tbody className="divide-y">
+                        {salesInvoices.map((inv, idx) => (
+                          <tr key={idx}>
+                            <td className="p-3 font-bold text-brand-600">
+                              {inv.invoiceNumber}
+                              {inv.preOrderReference && <div className="text-[10px] text-gray-400">Ref: {inv.preOrderReference}</div>}
+                            </td>
+                            <td className="p-3">{inv.customer?.name}</td>
+                            <td className="p-3 font-bold">{inv.grandTotal?.toFixed(2)} AED</td>
+                            <td className="p-3 text-right space-x-1">
+                              <button onClick={() => { setActiveInvoice(inv); setShowPrintModal(true); }} className="p-1.5 bg-gray-100 rounded" title="Print"><i data-lucide="printer" className="w-3.5 h-3.5"></i></button>
+                              <button onClick={() => handleDeleteBill(inv)} className="p-1.5 bg-red-50 text-red-600 rounded" title="Delete"><i data-lucide="trash-2" className="w-3.5 h-3.5"></i></button>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+
+                {billsSubTab === 'orders' && (
+                  <div className="bg-white dark:bg-gray-800 rounded-2xl border overflow-hidden shadow-sm">
+                    <table className="w-full text-left text-xs md:text-sm">
+                      <thead className="bg-gray-50 dark:bg-gray-700/50 text-[10px] uppercase">
+                        <tr><th className="p-3">Order #</th><th className="p-3">Customer</th><th className="p-3">Total</th><th className="p-3">Confirm</th><th className="p-3 text-right">Actions</th></tr>
+                      </thead>
+                      <tbody className="divide-y">
+                        {salesOrders.map((inv, idx) => (
+                          <tr key={idx}>
+                            <td className="p-3 font-bold text-amber-600">{inv.invoiceNumber}</td>
+                            <td className="p-3">{inv.customer?.name}</td>
+                            <td className="p-3 font-bold">{inv.grandTotal?.toFixed(2)} AED</td>
+                            <td className="p-3">
+                              <button type="button" onClick={() => redirectToBillingWithOrder(inv)} className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold px-3 py-1.5 rounded-lg text-xs flex items-center space-x-1 shadow cursor-pointer">
+                                <i data-lucide="check" className="w-3.5 h-3.5"></i>
+                                <span>Confirm Order</span>
+                              </button>
+                            </td>
+                            <td className="p-3 text-right space-x-1">
+                              <button onClick={() => { setActiveInvoice(inv); setShowPrintModal(true); }} className="p-1.5 bg-gray-100 rounded" title="Print"><i data-lucide="printer" className="w-3.5 h-3.5"></i></button>
+                              <button onClick={() => handleDeleteBill(inv)} className="p-1.5 bg-red-50 text-red-600 rounded" title="Delete"><i data-lucide="trash-2" className="w-3.5 h-3.5"></i></button>
+                            </td>
+                          </tr>
+                        ))}
+                        {salesOrders.length === 0 && (
+                          <tr><td colSpan="5" className="p-6 text-center text-gray-400">No pending Sales Orders.</td></tr>
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {activeTab === 'products' && (
+              <div className="space-y-4">
+                <div className="flex items-center justify-between">
+                  <h2 className="text-base md:text-xl font-bold">Products Inventory</h2>
+                  <button onClick={openAddProduct} className="bg-brand-600 text-white px-3 py-2 rounded-xl text-xs font-bold shadow">Add Product</button>
+                </div>
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
                   {products.map((p, idx) => (
-                    <div key={p.id || idx} className="bg-white dark:bg-gray-800 p-4 rounded-2xl border border-gray-100 dark:border-gray-700 shadow-sm flex justify-between items-center">
-                      <div>
-                        <span className="text-[10px] text-gray-400 font-bold">{p.code || 'PRD'}</span>
-                        <h4 className="font-bold text-sm">{p.name}</h4>
-                        <div className="text-xs text-gray-500 font-semibold">{p.price.toFixed(2)} AED</div>
-                      </div>
-                      <div className="text-right">
-                        <span className={`text-xs font-bold px-2 py-1 rounded-lg ${p.stock <= 10 ? 'bg-amber-100 text-amber-800' : 'bg-emerald-100 text-emerald-800'}`}>
-                          {p.stock} Stock
-                        </span>
-                        <button
-                          onClick={() => {
-                            const newQty = parseInt(prompt("Enter updated stock count:", p.stock));
-                            if (!isNaN(newQty)) {
-                              setProducts(products.map(item => item === p ? { ...item, stock: newQty } : item));
-                              if (p.id) getCol('products').doc(p.id).update({ stock: newQty }).catch(e => console.error(e));
-                            }
-                          }}
-                          className="block text-[10px] font-bold text-brand-600 mt-2 hover:underline">
-                          Adjust Stock
-                        </button>
-                      </div>
+                    <div key={p.id || idx} className="bg-white dark:bg-gray-800 p-3 rounded-2xl border flex justify-between items-center">
+                      <div><h4 className="font-bold text-sm">{p.name}</h4><div className="text-xs text-brand-600">{p.price.toFixed(2)} AED</div></div>
+                      <div className="text-right"><span className="text-xs font-bold px-2 py-0.5 bg-emerald-100 text-emerald-800 rounded">{p.stock} Stock</span></div>
                     </div>
                   ))}
                 </div>
               </div>
             )}
 
-            {/* 5. CUSTOMERS DIRECTORY */}
             {activeTab === 'customers' && (
               <div className="space-y-4">
                 <div className="flex items-center justify-between">
-                  <h2 className="text-xl font-bold">Customer Directory</h2>
-                  <button onClick={() => setShowCustModal(true)} className="bg-brand-600 text-white px-3 py-2 rounded-xl text-xs font-bold flex items-center space-x-1">
-                    <i data-lucide="user-plus" className="w-4 h-4"></i>
-                    <span>Add Customer</span>
-                  </button>
+                  <h2 className="text-base md:text-xl font-bold">Customer Directory</h2>
+                  <button onClick={openAddCustomer} className="bg-brand-600 text-white px-3 py-2 rounded-xl text-xs font-bold shadow">Add Customer</button>
                 </div>
-
-                <div className="bg-white dark:bg-gray-800 rounded-2xl border border-gray-100 dark:border-gray-700 overflow-hidden shadow-sm">
-                  <table className="w-full text-left text-sm">
-                    <thead className="bg-gray-50 dark:bg-gray-700/50 text-xs text-gray-500 uppercase">
-                      <tr>
-                        <th className="p-3">Customer Name</th>
-                        <th className="p-3">TRN (Tax #)</th>
-                        <th className="p-3">Phone</th>
-                        <th className="p-3">Address</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-gray-100 dark:divide-gray-700">
+                <div className="bg-white dark:bg-gray-800 rounded-2xl border overflow-hidden shadow-sm">
+                  <table className="w-full text-left text-xs md:text-sm">
+                    <thead className="bg-gray-50 dark:bg-gray-700/50 text-[10px] uppercase"><tr><th className="p-3">Name</th><th className="p-3">Mobile</th><th className="p-3">Email</th><th className="p-3">TRN</th></tr></thead>
+                    <tbody className="divide-y">
                       {customers.map((c, idx) => (
                         <tr key={c.id || idx}>
                           <td className="p-3 font-bold">{c.name}</td>
-                          <td className="p-3 font-mono text-xs">{c.trn}</td>
-                          <td className="p-3 text-xs">{c.phone}</td>
-                          <td className="p-3 text-xs text-gray-500">{c.address}</td>
+                          <td className="p-3">{c.phone}</td>
+                          <td className="p-3 text-gray-500">{c.email}</td>
+                          <td className="p-3 font-mono">{c.trn}</td>
                         </tr>
                       ))}
                     </tbody>
@@ -812,158 +834,127 @@
               </div>
             )}
 
-            {/* 6. SETTINGS */}
             {activeTab === 'reports' && (
               <div className="space-y-4">
-                <div className="flex items-center justify-between">
-                  <h2 className="text-xl font-bold">Company & Tax Settings</h2>
-                  <button onClick={handleSaveCompany} className="bg-brand-600 text-white px-4 py-2 rounded-xl text-xs font-bold shadow">Save Settings</button>
-                </div>
-                <div className="bg-white dark:bg-gray-800 p-6 rounded-2xl border border-gray-100 dark:border-gray-700 max-w-lg space-y-3 text-xs">
-                  <div>
-                    <label className="font-semibold text-gray-500">Business Name</label>
-                    <input type="text" value={company.name} onChange={(e) => setCompany({ ...company, name: e.target.value })} className="w-full p-2 bg-gray-50 dark:bg-gray-700 border rounded-lg mt-1 font-bold" />
-                  </div>
-                  <div>
-                    <label className="font-semibold text-gray-500">UAE TRN (Tax Registration Number)</label>
-                    <input type="text" value={company.trn} onChange={(e) => setCompany({ ...company, trn: e.target.value })} className="w-full p-2 bg-gray-50 dark:bg-gray-700 border rounded-lg mt-1 font-mono" />
-                  </div>
-                  <div>
-                    <label className="font-semibold text-gray-500">Phone Number</label>
-                    <input type="text" value={company.phone} onChange={(e) => setCompany({ ...company, phone: e.target.value })} className="w-full p-2 bg-gray-50 dark:bg-gray-700 border rounded-lg mt-1" />
-                  </div>
-                  <div>
-                    <label className="font-semibold text-gray-500">Address</label>
-                    <input type="text" value={company.address} onChange={(e) => setCompany({ ...company, address: e.target.value })} className="w-full p-2 bg-gray-50 dark:bg-gray-700 border rounded-lg mt-1" />
-                  </div>
-                  <div>
-                    <label className="font-semibold text-gray-500">Standard VAT Rate (%)</label>
-                    <input type="number" value={company.vatPercent} onChange={(e) => setCompany({ ...company, vatPercent: parseFloat(e.target.value) || 0 })} className="w-full p-2 bg-gray-50 dark:bg-gray-700 border rounded-lg mt-1" />
-                  </div>
+                <div className="flex items-center justify-between"><h2 className="text-base md:text-xl font-bold">Company Settings</h2><button onClick={handleSaveCompany} className="bg-brand-600 text-white px-4 py-2 rounded-xl text-xs font-bold shadow">Save</button></div>
+                <div className="bg-white dark:bg-gray-800 p-4 rounded-2xl border max-w-lg space-y-3 text-xs">
+                  <div><label className="font-semibold text-gray-500">Business Name</label><input type="text" value={company.name} onChange={(e) => setCompany({ ...company, name: e.target.value })} className="w-full p-2 border rounded mt-1 font-bold" /></div>
+                  <div><label className="font-semibold text-gray-500">TRN</label><input type="text" value={company.trn} onChange={(e) => setCompany({ ...company, trn: e.target.value })} className="w-full p-2 border rounded mt-1 font-mono" /></div>
                 </div>
               </div>
             )}
           </main>
 
-          {/* ADD PRODUCT MODAL */}
+          {/* Mobile Bottom Nav */}
+          <nav className="no-print md:hidden fixed bottom-0 left-0 right-0 bg-white dark:bg-gray-800 border-t flex justify-around p-2 z-40 pb-safe">
+            {[
+              { id: 'dashboard', label: 'Home', icon: 'layout-dashboard' },
+              { id: 'pos', label: 'Billing', icon: 'file-text' },
+              { id: 'invoices', label: 'Bills', icon: 'receipt' },
+              { id: 'products', label: 'Stock', icon: 'package' },
+              { id: 'customers', label: 'Cust', icon: 'users' },
+            ].map(nav => (
+              <button key={nav.id} onClick={() => setActiveTab(nav.id)} className={`flex flex-col items-center p-1 text-[10px] ${activeTab === nav.id ? 'text-brand-600 font-bold' : 'text-gray-400'}`}>
+                <i data-lucide={nav.icon} className="w-5 h-5 mb-0.5"></i><span>{nav.label}</span>
+              </button>
+            ))}
+          </nav>
+
+          {/* CHECKOUT MODAL */}
+          {showCheckoutConfirm && (
+            <div className="fixed inset-0 bg-black/60 z-50 flex items-end sm:items-center justify-center p-3">
+              <div className="bg-white dark:bg-gray-800 p-5 rounded-t-3xl sm:rounded-2xl max-w-md w-full shadow-2xl space-y-4">
+                <h3 className="font-bold text-sm">Save Transaction</h3>
+                <div className="space-y-2">
+                  <button onClick={() => confirmAndSaveOrder('TAX_INVOICE')} className="w-full bg-emerald-600 text-white font-bold py-3 rounded-xl text-xs cursor-pointer">Save & Finalize Official Tax Invoice</button>
+                  <button onClick={() => confirmAndSaveOrder('SALES_ORDER')} className="w-full bg-amber-600 text-white font-bold py-3 rounded-xl text-xs cursor-pointer">Save as Sales Order (Draft)</button>
+                  <button onClick={() => setShowCheckoutConfirm(false)} className="w-full bg-gray-200 dark:bg-gray-700 py-2 rounded-xl text-xs">Cancel</button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* PRODUCT MODAL */}
           {showProdModal && (
-            <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4">
-              <div className="bg-white dark:bg-gray-800 p-6 rounded-2xl max-w-md w-full shadow-2xl">
-                <h3 className="font-bold text-base mb-4">Add New Product</h3>
-                <form onSubmit={handleCreateProduct} className="space-y-3 text-xs">
-                  <div>
-                    <label className="font-semibold text-gray-500">Product Name *</label>
-                    <input type="text" required value={newProd.name} onChange={e => setNewProd({ ...newProd, name: e.target.value })} className="w-full p-2 bg-gray-50 dark:bg-gray-700 border rounded-lg mt-1" />
-                  </div>
-                  <div className="grid grid-cols-2 gap-2">
-                    <div>
-                      <label className="font-semibold text-gray-500">Code/SKU</label>
-                      <input type="text" value={newProd.code} onChange={e => setNewProd({ ...newProd, code: e.target.value })} placeholder="Auto" className="w-full p-2 bg-gray-50 dark:bg-gray-700 border rounded-lg mt-1" />
-                    </div>
-                    <div>
-                      <label className="font-semibold text-gray-500">Price (AED) *</label>
-                      <input type="number" step="0.01" required value={newProd.price} onChange={e => setNewProd({ ...newProd, price: e.target.value })} className="w-full p-2 bg-gray-50 dark:bg-gray-700 border rounded-lg mt-1" />
-                    </div>
-                  </div>
-                  <div>
-                    <label className="font-semibold text-gray-500">Initial Stock Quantity</label>
-                    <input type="number" value={newProd.stock} onChange={e => setNewProd({ ...newProd, stock: e.target.value })} className="w-full p-2 bg-gray-50 dark:bg-gray-700 border rounded-lg mt-1" />
-                  </div>
-                  <div className="flex justify-end space-x-2 pt-3">
-                    <button type="button" onClick={() => setShowProdModal(false)} className="px-4 py-2 bg-gray-200 dark:bg-gray-700 rounded-lg font-bold">Cancel</button>
-                    <button type="submit" className="px-4 py-2 bg-brand-600 text-white rounded-lg font-bold">Save Product</button>
-                  </div>
+            <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-3">
+              <div className="bg-white dark:bg-gray-800 p-5 rounded-2xl max-w-md w-full shadow-2xl space-y-3">
+                <h3 className="font-bold text-sm">Add Product</h3>
+                <form onSubmit={handleSaveProduct} className="space-y-3 text-xs">
+                  <input type="text" required placeholder="Product Name" value={prodForm.name} onChange={e => setProdForm({ ...prodForm, name: e.target.value })} className="w-full p-2 border rounded" />
+                  <input type="number" step="0.01" required placeholder="Price" value={prodForm.price} onChange={e => setProdForm({ ...prodForm, price: e.target.value })} className="w-full p-2 border rounded" />
+                  <input type="number" placeholder="Stock" value={prodForm.stock} onChange={e => setProdForm({ ...prodForm, stock: e.target.value })} className="w-full p-2 border rounded" />
+                  <div className="flex justify-end space-x-2"><button type="button" onClick={() => setShowProdModal(false)} className="px-3 py-1.5 bg-gray-200 rounded">Cancel</button><button type="submit" className="px-3 py-1.5 bg-brand-600 text-white rounded">Save</button></div>
                 </form>
               </div>
             </div>
           )}
 
-          {/* ADD CUSTOMER MODAL */}
+          {/* CUSTOMER MODAL (WITH MOBILE & EMAIL FIELDS) */}
           {showCustModal && (
-            <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4">
-              <div className="bg-white dark:bg-gray-800 p-6 rounded-2xl max-w-md w-full shadow-2xl">
-                <h3 className="font-bold text-base mb-4">Add Customer Profile</h3>
-                <form onSubmit={handleCreateCustomer} className="space-y-3 text-xs">
+            <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-3">
+              <div className="bg-white dark:bg-gray-800 p-5 rounded-2xl max-w-md w-full shadow-2xl space-y-3">
+                <h3 className="font-bold text-sm">Add Customer Profile</h3>
+                <form onSubmit={handleSaveCustomer} className="space-y-3 text-xs">
                   <div>
                     <label className="font-semibold text-gray-500">Customer / Business Name *</label>
-                    <input type="text" required value={newCust.name} onChange={e => setNewCust({ ...newCust, name: e.target.value })} className="w-full p-2 bg-gray-50 dark:bg-gray-700 border rounded-lg mt-1" />
-                  </div>
-                  <div>
-                    <label className="font-semibold text-gray-500">UAE TRN Number (Optional)</label>
-                    <input type="text" value={newCust.trn} onChange={e => setNewCust({ ...newCust, trn: e.target.value })} className="w-full p-2 bg-gray-50 dark:bg-gray-700 border rounded-lg mt-1 font-mono" />
+                    <input type="text" required value={custForm.name} onChange={e => setCustForm({ ...custForm, name: e.target.value })} className="w-full p-2 border rounded mt-1" />
                   </div>
                   <div className="grid grid-cols-2 gap-2">
                     <div>
-                      <label className="font-semibold text-gray-500">Phone</label>
-                      <input type="text" value={newCust.phone} onChange={e => setNewCust({ ...newCust, phone: e.target.value })} className="w-full p-2 bg-gray-50 dark:bg-gray-700 border rounded-lg mt-1" />
+                      <label className="font-semibold text-gray-500">Mobile Number</label>
+                      <input type="text" placeholder="+971 50..." value={custForm.phone} onChange={e => setCustForm({ ...custForm, phone: e.target.value })} className="w-full p-2 border rounded mt-1" />
                     </div>
                     <div>
-                      <label className="font-semibold text-gray-500">Address</label>
-                      <input type="text" value={newCust.address} onChange={e => setNewCust({ ...newCust, address: e.target.value })} className="w-full p-2 bg-gray-50 dark:bg-gray-700 border rounded-lg mt-1" />
+                      <label className="font-semibold text-gray-500">Email ID</label>
+                      <input type="email" placeholder="name@domain.com" value={custForm.email} onChange={e => setCustForm({ ...custForm, email: e.target.value })} className="w-full p-2 border rounded mt-1" />
                     </div>
                   </div>
-                  <div className="flex justify-end space-x-2 pt-3">
-                    <button type="button" onClick={() => setShowCustModal(false)} className="px-4 py-2 bg-gray-200 dark:bg-gray-700 rounded-lg font-bold">Cancel</button>
-                    <button type="submit" className="px-4 py-2 bg-brand-600 text-white rounded-lg font-bold">Save Customer</button>
+                  <div>
+                    <label className="font-semibold text-gray-500">UAE TRN Number</label>
+                    <input type="text" value={custForm.trn} onChange={e => setCustForm({ ...custForm, trn: e.target.value })} className="w-full p-2 border rounded mt-1 font-mono" />
+                  </div>
+                  <div>
+                    <label className="font-semibold text-gray-500">Address</label>
+                    <input type="text" value={custForm.address} onChange={e => setCustForm({ ...custForm, address: e.target.value })} className="w-full p-2 border rounded mt-1" />
+                  </div>
+                  <div className="flex justify-end space-x-2 pt-2">
+                    <button type="button" onClick={() => setShowCustModal(false)} className="px-3 py-1.5 bg-gray-200 rounded">Cancel</button>
+                    <button type="submit" className="px-3 py-1.5 bg-brand-600 text-white rounded font-bold">Save Customer</button>
                   </div>
                 </form>
               </div>
             </div>
           )}
 
-          {/* PRINT TAX RECEIPT MODAL */}
+          {/* PRINT MODAL */}
           {showPrintModal && activeInvoice && (
-            <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4">
-              <div className="bg-white p-6 rounded-2xl max-w-sm w-full text-black shadow-2xl">
+            <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-3">
+              <div className="bg-white p-5 rounded-2xl max-w-sm w-full text-black shadow-2xl">
                 <div id="printable-area" className="text-xs space-y-3 font-mono">
                   <div className="text-center border-b pb-2">
-                    <h3 className="font-extrabold text-base tracking-wider">TAX INVOICE / فاتورة ضريبية</h3>
-                    <p className="font-bold text-sm mt-1">{activeInvoice.company?.name}</p>
-                    <p className="text-[10px]">{activeInvoice.company?.address}</p>
-                    <p className="font-bold text-[11px]">TRN: {activeInvoice.company?.trn}</p>
+                    <h3 className="font-extrabold text-sm">{activeInvoice.type?.toUpperCase()} / فاتورة ضريبية</h3>
+                    <p className="font-bold">{activeInvoice.company?.name}</p>
+                    <p className="text-[10px]">TRN: {activeInvoice.company?.trn}</p>
                   </div>
-                  <div className="text-[11px] border-b pb-2 space-y-0.5">
-                    <div><strong>Invoice #:</strong> {activeInvoice.invoiceNumber}</div>
-                    <div><strong>Date:</strong> {new Date(activeInvoice.date).toLocaleString()}</div>
+                  <div>
+                    <div><strong>Doc #:</strong> {activeInvoice.invoiceNumber}</div>
+                    {activeInvoice.preOrderReference && <div className="text-emerald-700 font-bold"><strong>Pre-Order Ref:</strong> {activeInvoice.preOrderReference}</div>}
                     <div><strong>Customer:</strong> {activeInvoice.customer?.name}</div>
-                    <div><strong>Customer TRN:</strong> {activeInvoice.customer?.trn}</div>
+                    <div><strong>Mobile:</strong> {activeInvoice.customer?.phone}</div>
                   </div>
                   <table className="w-full text-left border-t border-b py-1">
-                    <thead>
-                      <tr className="border-b text-[10px] uppercase">
-                        <th className="py-1">Item</th>
-                        <th className="py-1 text-center">Qty</th>
-                        <th className="py-1 text-right">Price</th>
-                        <th className="py-1 text-right">Total</th>
-                      </tr>
-                    </thead>
+                    <thead><tr><th className="py-1">Item</th><th className="py-1 text-center">Qty</th><th className="py-1 text-right">Total</th></tr></thead>
                     <tbody>
                       {activeInvoice.items?.map((item, idx) => (
-                        <tr key={idx}>
-                          <td className="py-1 pr-1">{item.name}</td>
-                          <td className="py-1 text-center">{item.qty}</td>
-                          <td className="py-1 text-right">{item.price.toFixed(2)}</td>
-                          <td className="py-1 text-right font-bold">{(item.price * item.qty).toFixed(2)}</td>
-                        </tr>
+                        <tr key={idx}><td className="py-1">{item.name}</td><td className="py-1 text-center">{item.qty}</td><td className="py-1 text-right">{(item.price * item.qty).toFixed(2)}</td></tr>
                       ))}
                     </tbody>
                   </table>
-                  <div className="text-right space-y-1 text-[11px] pt-1">
-                    <div className="flex justify-between"><span>Subtotal:</span><span>{activeInvoice.subtotal?.toFixed(2)} AED</span></div>
-                    {activeInvoice.discount > 0 && <div className="flex justify-between text-red-600"><span>Discount:</span><span>-{activeInvoice.discount?.toFixed(2)} AED</span></div>}
-                    <div className="flex justify-between"><span>VAT (5%):</span><span>{activeInvoice.vatAmount?.toFixed(2)} AED</span></div>
-                    <div className="flex justify-between font-extrabold text-sm border-t pt-1"><span>Grand Total:</span><span>{activeInvoice.grandTotal?.toFixed(2)} AED</span></div>
-                  </div>
-                  <div className="text-center text-[10px] text-gray-500 pt-3 border-t">
-                    Thank you for your business! / شكراً لزيارتكم
-                  </div>
+                  <div className="text-right font-extrabold text-sm">Grand Total: {activeInvoice.grandTotal?.toFixed(2)} AED</div>
                 </div>
                 <div className="no-print flex justify-end space-x-2 mt-4">
-                  <button onClick={() => setShowPrintModal(false)} className="px-3 py-1.5 bg-gray-200 rounded-lg text-xs font-bold">Close</button>
-                  <button onClick={() => window.print()} className="px-4 py-1.5 bg-brand-600 text-white rounded-lg text-xs font-bold flex items-center space-x-1">
-                    <i data-lucide="printer" className="w-4 h-4"></i>
-                    <span>Print Receipt</span>
-                  </button>
+                  <button onClick={() => setShowPrintModal(false)} className="px-3 py-1 bg-gray-200 rounded text-xs">Close</button>
+                  <button onClick={() => window.print()} className="px-3 py-1 bg-brand-600 text-white rounded text-xs font-bold">Print</button>
                 </div>
               </div>
             </div>
