@@ -76,6 +76,9 @@
     }
     const db = firebase.firestore();
 
+    // Strict Collection Path Helper (Prevents Permission Errors)
+    const getCol = (colName) => db.collection('artifacts').doc('invoicify_app').collection('public').doc('data').collection(colName);
+
     const INITIAL_PRODUCTS = [
       { id: 'p1', name: 'Premium Coffee Beans (1kg)', code: 'PRD-01', price: 85.00, vatRate: 5, stock: 42, category: 'Beverages' },
       { id: 'p2', name: 'Organic Almond Milk 1L', code: 'PRD-02', price: 18.50, vatRate: 5, stock: 15, category: 'Beverages' },
@@ -93,7 +96,7 @@
       const [activeTab, setActiveTab] = useState('dashboard');
       const [syncStatus, setSyncStatus] = useState('Connecting...');
 
-      // Company Profile
+      // Company Profile State
       const [company, setCompany] = useState(() => {
         const local = localStorage.getItem('inv_company');
         return local ? JSON.parse(local) : {
@@ -107,7 +110,7 @@
         };
       });
 
-      // Data States with LocalStorage initializers
+      // Local Data States
       const [products, setProducts] = useState(() => {
         const local = localStorage.getItem('inv_products');
         return local ? JSON.parse(local) : INITIAL_PRODUCTS;
@@ -129,7 +132,7 @@
       const [paymentMethod, setPaymentMethod] = useState('cash');
       const [searchProduct, setSearchProduct] = useState('');
 
-      // Modals
+      // Modal & View States
       const [activeInvoice, setActiveInvoice] = useState(null);
       const [showPrintModal, setShowPrintModal] = useState(false);
       const [searchInvoice, setSearchInvoice] = useState('');
@@ -149,11 +152,10 @@
         localStorage.setItem('theme', theme);
       }, [theme]);
 
-      // --- REALTIME FIRESTORE SYNC LISTENERS ---
-
-      // 1. Sync Invoices
+      // --- FIRESTORE LISTENERS WITH CORRECTED PATH ---
       useEffect(() => {
-        const unsubInvoices = db.collection('invoices').onSnapshot(
+        // 1. Invoices Listener
+        const unsubInvoices = getCol('invoices').onSnapshot(
           (snapshot) => {
             const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
             if (data.length > 0) {
@@ -168,22 +170,21 @@
           }
         );
 
-        // 2. Sync Customers
-        const unsubCustomers = db.collection('customers').onSnapshot(
+        // 2. Customers Listener
+        const unsubCustomers = getCol('customers').onSnapshot(
           (snapshot) => {
             const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
             if (data.length > 0) {
               setCustomers(data);
               localStorage.setItem('inv_customers', JSON.stringify(data));
-              // Update selected customer reference if exists
               setSelectedCustomer(prev => data.find(c => c.id === prev?.id) || data[0]);
             }
           },
           (err) => console.error("Customers sync error:", err)
         );
 
-        // 3. Sync Products
-        const unsubProducts = db.collection('products').onSnapshot(
+        // 3. Products Listener
+        const unsubProducts = getCol('products').onSnapshot(
           (snapshot) => {
             const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
             if (data.length > 0) {
@@ -194,8 +195,8 @@
           (err) => console.error("Products sync error:", err)
         );
 
-        // 4. Sync Company Info
-        const unsubCompany = db.collection('settings').doc('company').onSnapshot(
+        // 4. Company Settings Listener
+        const unsubCompany = getCol('settings').doc('company').onSnapshot(
           (doc) => {
             if (doc.exists) {
               setCompany(doc.data());
@@ -213,7 +214,7 @@
         };
       }, []);
 
-      // LocalStorage Backup Fallbacks
+      // Local Caching Updates
       useEffect(() => { localStorage.setItem('inv_company', JSON.stringify(company)); }, [company]);
       useEffect(() => { localStorage.setItem('inv_products', JSON.stringify(products)); }, [products]);
       useEffect(() => { localStorage.setItem('inv_customers', JSON.stringify(customers)); }, [customers]);
@@ -239,7 +240,6 @@
         return { subtotal, discAmount, netTaxable, vatTotal, grandTotal };
       }, [cart, discount, discountType, company.vatPercent]);
 
-      // Cart Management
       const addToCart = (product) => {
         if (product.stock <= 0) {
           alert('Warning: Product is out of stock!');
@@ -270,7 +270,7 @@
         }
       };
 
-      // Checkout & Save Invoice
+      // Checkout
       const handleCheckout = async () => {
         if (cart.length === 0) {
           alert("Please add items to invoice before checking out.");
@@ -294,13 +294,13 @@
           status: 'Paid'
         };
 
-        // Deduct inventory locally & update Firestore docs if product exists
+        // Update local stock
         const updatedProducts = products.map(p => {
           const cartItem = cart.find(c => c.id === p.id);
           if (cartItem) {
             const newStock = Math.max(0, p.stock - cartItem.qty);
             if (p.id && !p.id.startsWith('p1') && !p.id.startsWith('p2') && !p.id.startsWith('p3') && !p.id.startsWith('p4')) {
-              db.collection('products').doc(p.id).update({ stock: newStock }).catch(e => console.error(e));
+              getCol('products').doc(p.id).update({ stock: newStock }).catch(e => console.error(e));
             }
             return { ...p, stock: newStock };
           }
@@ -310,12 +310,11 @@
         setProducts(updatedProducts);
         setInvoices([newInvoice, ...invoices]);
 
-        // Save Invoice to Firestore
         try {
-          await db.collection('invoices').add(newInvoice);
-          console.log("Invoice saved to cloud!");
+          await getCol('invoices').add(newInvoice);
+          console.log("Invoice saved to Cloud!");
         } catch (e) {
-          console.error("Cloud invoice save error:", e);
+          console.error("Cloud save error:", e);
         }
 
         setCart([]);
@@ -342,14 +341,14 @@
 
         if (inv.id) {
           try {
-            await db.collection('invoices').doc(inv.id).update({ status: 'Returned' });
+            await getCol('invoices').doc(inv.id).update({ status: 'Returned' });
           } catch(e) {
             console.error(e);
           }
         }
       };
 
-      // CREATE NEW PRODUCT (SAVED TO FIREBASE CLOUD)
+      // ADD PRODUCT TO CLOUD
       const handleCreateProduct = async (e) => {
         e.preventDefault();
         if (!newProd.name || !newProd.price) {
@@ -367,22 +366,20 @@
           createdAt: new Date().toISOString()
         };
 
-        // Optimistic UI update
         setProducts(prev => [...prev, createdProduct]);
         setNewProd({ name: '', code: '', price: '', stock: '', category: 'General' });
         setShowProdModal(false);
 
-        // SAVE TO FIREBASE CLOUD
         try {
-          await db.collection('products').add(createdProduct);
-          console.log("Product saved to cloud successfully!");
+          await getCol('products').add(createdProduct);
+          console.log("Product saved to Cloud!");
         } catch(err) {
-          console.error("Error saving product to Cloud:", err);
-          alert("Saved locally! Cloud error: " + err.message);
+          console.error("Cloud Product Save Error:", err);
+          alert("Saved locally. Cloud Error: " + err.message);
         }
       };
 
-      // CREATE NEW CUSTOMER (SAVED TO FIREBASE CLOUD)
+      // ADD CUSTOMER TO CLOUD (FIXED PATH)
       const handleCreateCustomer = async (e) => {
         e.preventDefault();
         if (!newCust.name) {
@@ -399,30 +396,28 @@
           createdAt: new Date().toISOString()
         };
 
-        // Optimistic UI update
         setCustomers(prev => [...prev, createdCustomer]);
         setSelectedCustomer(createdCustomer);
         setNewCust({ name: '', trn: '', phone: '', email: '', address: '' });
         setShowCustModal(false);
 
-        // SAVE TO FIREBASE CLOUD
         try {
-          await db.collection('customers').add(createdCustomer);
-          console.log("Customer saved to cloud successfully!");
+          await getCol('customers').add(createdCustomer);
+          console.log("Customer saved to Cloud!");
         } catch(err) {
-          console.error("Error saving customer to Cloud:", err);
-          alert("Saved locally! Cloud error: " + err.message);
+          console.error("Cloud Customer Save Error:", err);
+          alert("Saved locally. Cloud Error: " + err.message);
         }
       };
 
-      // SAVE COMPANY PROFILE TO CLOUD
+      // SAVE COMPANY SETTINGS TO CLOUD
       const handleSaveCompany = async () => {
         try {
-          await db.collection('settings').doc('company').set(company);
-          alert("Company settings updated and saved to Cloud!");
+          await getCol('settings').doc('company').set(company);
+          alert("Company settings saved to Cloud!");
         } catch(e) {
           console.error(e);
-          alert("Saved locally! Cloud error: " + e.message);
+          alert("Saved locally. Cloud Error: " + e.message);
         }
       };
 
@@ -444,7 +439,7 @@
 
       return (
         <div className="flex flex-col md:flex-row min-h-screen">
-          {/* Sidebar Navigation */}
+          {/* Sidebar */}
           <aside className="no-print bg-white dark:bg-gray-800 border-r border-gray-200 dark:border-gray-700 w-full md:w-64 flex-shrink-0 flex flex-col justify-between">
             <div>
               <div className="p-4 border-b border-gray-200 dark:border-gray-700 flex items-center justify-between">
@@ -488,7 +483,6 @@
               </nav>
             </div>
 
-            {/* Cloud Sync Status Indicator */}
             <div className="p-3 border-t text-xs">
               <div className="flex items-center space-x-2">
                 <span className={`w-2.5 h-2.5 rounded-full ${syncStatus === 'Cloud Connected' ? 'bg-emerald-500 animate-pulse' : 'bg-amber-500'}`}></span>
@@ -497,10 +491,10 @@
             </div>
           </aside>
 
-          {/* Main Workspace */}
+          {/* Main Area */}
           <main className="flex-1 overflow-y-auto p-4 md:p-6 mb-16 md:mb-0">
             
-            {/* 1. DASHBOARD TAB */}
+            {/* 1. DASHBOARD */}
             {activeTab === 'dashboard' && (
               <div className="space-y-6">
                 <div className="flex items-center justify-between">
@@ -573,7 +567,7 @@
               </div>
             )}
 
-            {/* 2. CREATE INVOICE TAB */}
+            {/* 2. POS BILLING */}
             {activeTab === 'pos' && (
               <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
                 <div className="lg:col-span-7 space-y-4">
@@ -591,9 +585,9 @@
                   <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 max-h-[calc(100vh-220px)] overflow-y-auto">
                     {products
                       .filter(p => p.name.toLowerCase().includes(searchProduct.toLowerCase()) || p.code?.toLowerCase().includes(searchProduct.toLowerCase()))
-                      .map(product => (
+                      .map((product, idx) => (
                         <div
-                          key={product.id || product.code}
+                          key={product.id || idx}
                           onClick={() => addToCart(product)}
                           className="bg-white dark:bg-gray-800 p-3 rounded-2xl border border-gray-100 dark:border-gray-700 hover:border-brand-500 cursor-pointer shadow-sm flex flex-col justify-between">
                           <div>
@@ -681,7 +675,7 @@
               </div>
             )}
 
-            {/* 3. INVOICES HISTORY */}
+            {/* 3. INVOICES */}
             {activeTab === 'invoices' && (
               <div className="space-y-4">
                 <div className="flex items-center justify-between">
@@ -741,7 +735,7 @@
               </div>
             )}
 
-            {/* 4. STOCK & INVENTORY MANAGEMENT */}
+            {/* 4. STOCK */}
             {activeTab === 'products' && (
               <div className="space-y-4">
                 <div className="flex items-center justify-between">
@@ -769,7 +763,7 @@
                             const newQty = parseInt(prompt("Enter updated stock count:", p.stock));
                             if (!isNaN(newQty)) {
                               setProducts(products.map(item => item === p ? { ...item, stock: newQty } : item));
-                              if (p.id) db.collection('products').doc(p.id).update({ stock: newQty }).catch(e => console.error(e));
+                              if (p.id) getCol('products').doc(p.id).update({ stock: newQty }).catch(e => console.error(e));
                             }
                           }}
                           className="block text-[10px] font-bold text-brand-600 mt-2 hover:underline">
@@ -818,7 +812,7 @@
               </div>
             )}
 
-            {/* 6. SETTINGS & COMPANY PROFILE */}
+            {/* 6. SETTINGS */}
             {activeTab === 'reports' && (
               <div className="space-y-4">
                 <div className="flex items-center justify-between">
