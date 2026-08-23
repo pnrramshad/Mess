@@ -60,7 +60,7 @@
   <script type="text/babel">
     const { useState, useEffect, useMemo } = React;
 
-    // Firebase Configuration
+    // Firebase Credentials for tharavad336
     const firebaseConfig = {
       apiKey: "AIzaSyDc113ArrZa-bBCvKl-3UEwi4pIAdtwmIA",
       authDomain: "tharavad336.firebaseapp.com",
@@ -93,7 +93,7 @@
       const [activeTab, setActiveTab] = useState('dashboard');
       const [syncStatus, setSyncStatus] = useState('Connecting...');
 
-      // Company Settings State
+      // Company Profile
       const [company, setCompany] = useState(() => {
         const local = localStorage.getItem('inv_company');
         return local ? JSON.parse(local) : {
@@ -107,7 +107,7 @@
         };
       });
 
-      // Data States
+      // Data States with LocalStorage initializers
       const [products, setProducts] = useState(() => {
         const local = localStorage.getItem('inv_products');
         return local ? JSON.parse(local) : INITIAL_PRODUCTS;
@@ -121,24 +121,22 @@
         return local ? JSON.parse(local) : [];
       });
 
-      // POS Cart State
+      // Cart State
       const [cart, setCart] = useState([]);
-      const [selectedCustomer, setSelectedCustomer] = useState(INITIAL_CUSTOMERS[1]);
+      const [selectedCustomer, setSelectedCustomer] = useState(INITIAL_CUSTOMERS[0]);
       const [discount, setDiscount] = useState(0);
       const [discountType, setDiscountType] = useState('amount');
       const [paymentMethod, setPaymentMethod] = useState('cash');
       const [searchProduct, setSearchProduct] = useState('');
 
-      // Print & Modal State
+      // Modals
       const [activeInvoice, setActiveInvoice] = useState(null);
       const [showPrintModal, setShowPrintModal] = useState(false);
       const [searchInvoice, setSearchInvoice] = useState('');
 
-      // New Product Modal Form State
       const [showProdModal, setShowProdModal] = useState(false);
       const [newProd, setNewProd] = useState({ name: '', code: '', price: '', stock: '', category: 'General' });
 
-      // New Customer Form Modal State
       const [showCustModal, setShowCustModal] = useState(false);
       const [newCust, setNewCust] = useState({ name: '', trn: '', phone: '', email: '', address: '' });
 
@@ -151,9 +149,11 @@
         localStorage.setItem('theme', theme);
       }, [theme]);
 
-      // Direct Firebase Listener - Realtime Cloud Sync
+      // --- REALTIME FIRESTORE SYNC LISTENERS ---
+
+      // 1. Sync Invoices
       useEffect(() => {
-        const unsubscribe = db.collection('invoices').onSnapshot(
+        const unsubInvoices = db.collection('invoices').onSnapshot(
           (snapshot) => {
             const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
             if (data.length > 0) {
@@ -163,14 +163,57 @@
             setSyncStatus('Cloud Connected');
           },
           (err) => {
-            console.error("Firebase Error:", err);
-            setSyncStatus('Offline Mode (Local Storage)');
+            console.error("Invoices sync error:", err);
+            setSyncStatus('Offline Mode');
           }
         );
 
-        return () => unsubscribe();
+        // 2. Sync Customers
+        const unsubCustomers = db.collection('customers').onSnapshot(
+          (snapshot) => {
+            const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+            if (data.length > 0) {
+              setCustomers(data);
+              localStorage.setItem('inv_customers', JSON.stringify(data));
+              // Update selected customer reference if exists
+              setSelectedCustomer(prev => data.find(c => c.id === prev?.id) || data[0]);
+            }
+          },
+          (err) => console.error("Customers sync error:", err)
+        );
+
+        // 3. Sync Products
+        const unsubProducts = db.collection('products').onSnapshot(
+          (snapshot) => {
+            const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+            if (data.length > 0) {
+              setProducts(data);
+              localStorage.setItem('inv_products', JSON.stringify(data));
+            }
+          },
+          (err) => console.error("Products sync error:", err)
+        );
+
+        // 4. Sync Company Info
+        const unsubCompany = db.collection('settings').doc('company').onSnapshot(
+          (doc) => {
+            if (doc.exists) {
+              setCompany(doc.data());
+              localStorage.setItem('inv_company', JSON.stringify(doc.data()));
+            }
+          },
+          (err) => console.error("Company sync error:", err)
+        );
+
+        return () => {
+          unsubInvoices();
+          unsubCustomers();
+          unsubProducts();
+          unsubCompany();
+        };
       }, []);
 
+      // LocalStorage Backup Fallbacks
       useEffect(() => { localStorage.setItem('inv_company', JSON.stringify(company)); }, [company]);
       useEffect(() => { localStorage.setItem('inv_products', JSON.stringify(products)); }, [products]);
       useEffect(() => { localStorage.setItem('inv_customers', JSON.stringify(customers)); }, [customers]);
@@ -196,7 +239,7 @@
         return { subtotal, discAmount, netTaxable, vatTotal, grandTotal };
       }, [cart, discount, discountType, company.vatPercent]);
 
-      // Add To Cart logic
+      // Cart Management
       const addToCart = (product) => {
         if (product.stock <= 0) {
           alert('Warning: Product is out of stock!');
@@ -214,7 +257,6 @@
         }
       };
 
-      // Update Cart Quantity
       const updateCartQty = (id, newQty) => {
         const prod = products.find(p => p.id === id);
         if (newQty > prod.stock) {
@@ -228,7 +270,7 @@
         }
       };
 
-      // Process Checkout & Save
+      // Checkout & Save Invoice
       const handleCheckout = async () => {
         if (cart.length === 0) {
           alert("Please add items to invoice before checking out.");
@@ -252,25 +294,28 @@
           status: 'Paid'
         };
 
-        // Update local stock
+        // Deduct inventory locally & update Firestore docs if product exists
         const updatedProducts = products.map(p => {
           const cartItem = cart.find(c => c.id === p.id);
           if (cartItem) {
-            return { ...p, stock: p.stock - cartItem.qty };
+            const newStock = Math.max(0, p.stock - cartItem.qty);
+            if (p.id && !p.id.startsWith('p1') && !p.id.startsWith('p2') && !p.id.startsWith('p3') && !p.id.startsWith('p4')) {
+              db.collection('products').doc(p.id).update({ stock: newStock }).catch(e => console.error(e));
+            }
+            return { ...p, stock: newStock };
           }
           return p;
         });
 
         setProducts(updatedProducts);
-        const updatedInvoices = [newInvoice, ...invoices];
-        setInvoices(updatedInvoices);
+        setInvoices([newInvoice, ...invoices]);
 
-        // Save to Firebase Cloud
+        // Save Invoice to Firestore
         try {
           await db.collection('invoices').add(newInvoice);
-          console.log("Saved to Cloud!");
+          console.log("Invoice saved to cloud!");
         } catch (e) {
-          console.error("Save to Cloud failed:", e);
+          console.error("Cloud invoice save error:", e);
         }
 
         setCart([]);
@@ -279,11 +324,10 @@
         setShowPrintModal(true);
       };
 
-      // Return/Refund Invoice
+      // Refund Invoice
       const handleRefundInvoice = async (inv) => {
         if (!confirm(`Are you sure you want to refund Invoice ${inv.invoiceNumber}? Stock will be restored.`)) return;
 
-        // Restore stock
         const updatedProducts = products.map(p => {
           const itemFound = inv.items.find(i => i.id === p.id);
           if (itemFound) {
@@ -296,56 +340,90 @@
         setProducts(updatedProducts);
         setInvoices(updatedInvoices);
 
-        // Sync change if document ID exists
         if (inv.id) {
           try {
             await db.collection('invoices').doc(inv.id).update({ status: 'Returned' });
           } catch(e) {
-            console.error("Update error:", e);
+            console.error(e);
           }
         }
       };
 
-      // Add Product Form Handler
-      const handleCreateProduct = (e) => {
+      // CREATE NEW PRODUCT (SAVED TO FIREBASE CLOUD)
+      const handleCreateProduct = async (e) => {
         e.preventDefault();
         if (!newProd.name || !newProd.price) {
           alert('Please fill out Product Name and Price');
           return;
         }
-        const created = {
-          id: 'p_' + Date.now(),
+
+        const createdProduct = {
           name: newProd.name,
           code: newProd.code || 'PRD-' + (products.length + 1),
           price: parseFloat(newProd.price) || 0,
           stock: parseInt(newProd.stock) || 0,
           vatRate: company.vatPercent,
-          category: newProd.category || 'General'
+          category: newProd.category || 'General',
+          createdAt: new Date().toISOString()
         };
-        setProducts([...products, created]);
+
+        // Optimistic UI update
+        setProducts(prev => [...prev, createdProduct]);
         setNewProd({ name: '', code: '', price: '', stock: '', category: 'General' });
         setShowProdModal(false);
+
+        // SAVE TO FIREBASE CLOUD
+        try {
+          await db.collection('products').add(createdProduct);
+          console.log("Product saved to cloud successfully!");
+        } catch(err) {
+          console.error("Error saving product to Cloud:", err);
+          alert("Saved locally! Cloud error: " + err.message);
+        }
       };
 
-      // Add Customer Form Handler
-      const handleCreateCustomer = (e) => {
+      // CREATE NEW CUSTOMER (SAVED TO FIREBASE CLOUD)
+      const handleCreateCustomer = async (e) => {
         e.preventDefault();
         if (!newCust.name) {
           alert('Please enter Customer Name');
           return;
         }
-        const created = {
-          id: 'c_' + Date.now(),
+
+        const createdCustomer = {
           name: newCust.name,
           trn: newCust.trn || 'N/A',
           phone: newCust.phone || 'N/A',
           email: newCust.email || 'N/A',
-          address: newCust.address || 'UAE'
+          address: newCust.address || 'UAE',
+          createdAt: new Date().toISOString()
         };
-        setCustomers([...customers, created]);
-        setSelectedCustomer(created);
+
+        // Optimistic UI update
+        setCustomers(prev => [...prev, createdCustomer]);
+        setSelectedCustomer(createdCustomer);
         setNewCust({ name: '', trn: '', phone: '', email: '', address: '' });
         setShowCustModal(false);
+
+        // SAVE TO FIREBASE CLOUD
+        try {
+          await db.collection('customers').add(createdCustomer);
+          console.log("Customer saved to cloud successfully!");
+        } catch(err) {
+          console.error("Error saving customer to Cloud:", err);
+          alert("Saved locally! Cloud error: " + err.message);
+        }
+      };
+
+      // SAVE COMPANY PROFILE TO CLOUD
+      const handleSaveCompany = async () => {
+        try {
+          await db.collection('settings').doc('company').set(company);
+          alert("Company settings updated and saved to Cloud!");
+        } catch(e) {
+          console.error(e);
+          alert("Saved locally! Cloud error: " + e.message);
+        }
       };
 
       // Dashboard Calculations
@@ -366,7 +444,7 @@
 
       return (
         <div className="flex flex-col md:flex-row min-h-screen">
-          {/* Sidebar */}
+          {/* Sidebar Navigation */}
           <aside className="no-print bg-white dark:bg-gray-800 border-r border-gray-200 dark:border-gray-700 w-full md:w-64 flex-shrink-0 flex flex-col justify-between">
             <div>
               <div className="p-4 border-b border-gray-200 dark:border-gray-700 flex items-center justify-between">
@@ -410,7 +488,7 @@
               </nav>
             </div>
 
-            {/* Cloud Status Footer */}
+            {/* Cloud Sync Status Indicator */}
             <div className="p-3 border-t text-xs">
               <div className="flex items-center space-x-2">
                 <span className={`w-2.5 h-2.5 rounded-full ${syncStatus === 'Cloud Connected' ? 'bg-emerald-500 animate-pulse' : 'bg-amber-500'}`}></span>
@@ -419,10 +497,10 @@
             </div>
           </aside>
 
-          {/* Main Content View */}
+          {/* Main Workspace */}
           <main className="flex-1 overflow-y-auto p-4 md:p-6 mb-16 md:mb-0">
             
-            {/* 1. DASHBOARD */}
+            {/* 1. DASHBOARD TAB */}
             {activeTab === 'dashboard' && (
               <div className="space-y-6">
                 <div className="flex items-center justify-between">
@@ -495,7 +573,7 @@
               </div>
             )}
 
-            {/* 2. POS BILLING ENGINE */}
+            {/* 2. CREATE INVOICE TAB */}
             {activeTab === 'pos' && (
               <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
                 <div className="lg:col-span-7 space-y-4">
@@ -512,15 +590,15 @@
 
                   <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 max-h-[calc(100vh-220px)] overflow-y-auto">
                     {products
-                      .filter(p => p.name.toLowerCase().includes(searchProduct.toLowerCase()) || p.code.toLowerCase().includes(searchProduct.toLowerCase()))
+                      .filter(p => p.name.toLowerCase().includes(searchProduct.toLowerCase()) || p.code?.toLowerCase().includes(searchProduct.toLowerCase()))
                       .map(product => (
                         <div
-                          key={product.id}
+                          key={product.id || product.code}
                           onClick={() => addToCart(product)}
                           className="bg-white dark:bg-gray-800 p-3 rounded-2xl border border-gray-100 dark:border-gray-700 hover:border-brand-500 cursor-pointer shadow-sm flex flex-col justify-between">
                           <div>
                             <div className="flex justify-between text-[10px] text-gray-400 font-bold mb-1">
-                              <span>{product.code}</span>
+                              <span>{product.code || 'PRD'}</span>
                               <span className={product.stock <= 10 ? 'text-amber-600' : ''}>{product.stock} stock</span>
                             </div>
                             <h4 className="font-semibold text-xs line-clamp-2">{product.name}</h4>
@@ -535,19 +613,21 @@
                   <div>
                     <div className="flex items-center justify-between mb-2">
                       <h3 className="font-bold text-sm">Invoice Summary</h3>
-                      <button onClick={() => setShowCustModal(true)} className="text-xs text-brand-600 font-bold hover:underline">+ New Customer</button>
+                      <button onClick={() => setShowCustModal(true)} className="text-xs text-brand-600 font-bold hover:underline">+ Add Customer</button>
                     </div>
 
                     <select
-                      value={selectedCustomer.id}
-                      onChange={(e) => setSelectedCustomer(customers.find(c => c.id === e.target.value))}
+                      value={selectedCustomer?.id || ''}
+                      onChange={(e) => setSelectedCustomer(customers.find(c => c.id === e.target.value) || customers[0])}
                       className="w-full p-2 text-xs bg-gray-50 dark:bg-gray-700 border rounded-xl mb-3">
-                      {customers.map(c => (<option key={c.id} value={c.id}>{c.name} {c.trn !== 'N/A' ? `(TRN: ${c.trn})` : ''}</option>))}
+                      {customers.map((c, idx) => (
+                        <option key={c.id || idx} value={c.id}>{c.name} {c.trn && c.trn !== 'N/A' ? `(TRN: ${c.trn})` : ''}</option>
+                      ))}
                     </select>
 
                     <div className="space-y-2 max-h-48 overflow-y-auto border-t border-b border-gray-100 dark:border-gray-700 py-2">
                       {cart.map(item => (
-                        <div key={item.id} className="flex items-center justify-between text-xs">
+                        <div key={item.id || item.name} className="flex items-center justify-between text-xs">
                           <div className="flex-1 pr-2">
                             <span className="font-bold">{item.name}</span>
                             <div className="text-[10px] text-gray-400">{item.price.toFixed(2)} AED</div>
@@ -608,7 +688,7 @@
                   <h2 className="text-xl font-bold">Invoices & Receipts</h2>
                   <input
                     type="text"
-                    placeholder="Search by bill # or customer..."
+                    placeholder="Search bill # or customer..."
                     value={searchInvoice}
                     onChange={(e) => setSearchInvoice(e.target.value)}
                     className="p-2 text-xs bg-white dark:bg-gray-800 border rounded-xl w-64"
@@ -644,7 +724,7 @@
                               </span>
                             </td>
                             <td className="p-3 text-right space-x-2">
-                              <button onClick={() => { setActiveInvoice(inv); setShowPrintModal(true); }} className="p-1.5 bg-gray-100 dark:bg-gray-700 rounded-lg text-gray-600 dark:text-gray-300">
+                              <button onClick={() => { setActiveInvoice(inv); setShowPrintModal(true); }} className="p-1.5 bg-gray-100 dark:bg-gray-700 rounded-lg">
                                 <i data-lucide="printer" className="w-4 h-4"></i>
                               </button>
                               {inv.status !== 'Returned' && (
@@ -673,22 +753,23 @@
                 </div>
 
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                  {products.map(p => (
-                    <div key={p.id} className="bg-white dark:bg-gray-800 p-4 rounded-2xl border border-gray-100 dark:border-gray-700 shadow-sm flex justify-between items-center">
+                  {products.map((p, idx) => (
+                    <div key={p.id || idx} className="bg-white dark:bg-gray-800 p-4 rounded-2xl border border-gray-100 dark:border-gray-700 shadow-sm flex justify-between items-center">
                       <div>
-                        <span className="text-[10px] text-gray-400 font-bold">{p.code}</span>
+                        <span className="text-[10px] text-gray-400 font-bold">{p.code || 'PRD'}</span>
                         <h4 className="font-bold text-sm">{p.name}</h4>
                         <div className="text-xs text-gray-500 font-semibold">{p.price.toFixed(2)} AED</div>
                       </div>
                       <div className="text-right">
                         <span className={`text-xs font-bold px-2 py-1 rounded-lg ${p.stock <= 10 ? 'bg-amber-100 text-amber-800' : 'bg-emerald-100 text-emerald-800'}`}>
-                          {p.stock} In Stock
+                          {p.stock} Stock
                         </span>
                         <button
                           onClick={() => {
                             const newQty = parseInt(prompt("Enter updated stock count:", p.stock));
                             if (!isNaN(newQty)) {
-                              setProducts(products.map(item => item.id === p.id ? { ...item, stock: newQty } : item));
+                              setProducts(products.map(item => item === p ? { ...item, stock: newQty } : item));
+                              if (p.id) db.collection('products').doc(p.id).update({ stock: newQty }).catch(e => console.error(e));
                             }
                           }}
                           className="block text-[10px] font-bold text-brand-600 mt-2 hover:underline">
@@ -723,8 +804,8 @@
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-gray-100 dark:divide-gray-700">
-                      {customers.map(c => (
-                        <tr key={c.id}>
+                      {customers.map((c, idx) => (
+                        <tr key={c.id || idx}>
                           <td className="p-3 font-bold">{c.name}</td>
                           <td className="p-3 font-mono text-xs">{c.trn}</td>
                           <td className="p-3 text-xs">{c.phone}</td>
@@ -740,7 +821,10 @@
             {/* 6. SETTINGS & COMPANY PROFILE */}
             {activeTab === 'reports' && (
               <div className="space-y-4">
-                <h2 className="text-xl font-bold">Company & Tax Settings</h2>
+                <div className="flex items-center justify-between">
+                  <h2 className="text-xl font-bold">Company & Tax Settings</h2>
+                  <button onClick={handleSaveCompany} className="bg-brand-600 text-white px-4 py-2 rounded-xl text-xs font-bold shadow">Save Settings</button>
+                </div>
                 <div className="bg-white dark:bg-gray-800 p-6 rounded-2xl border border-gray-100 dark:border-gray-700 max-w-lg space-y-3 text-xs">
                   <div>
                     <label className="font-semibold text-gray-500">Business Name</label>
