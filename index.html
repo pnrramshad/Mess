@@ -87,12 +87,22 @@
     const getCol = (colName) => db.collection('artifacts').doc('invoicify_app').collection('public').doc('data').collection(colName);
 
     function App() {
+      // Authentication State
+      const [currentUser, setCurrentUser] = useState(() => {
+        const local = sessionStorage.getItem('inv_current_user');
+        return local ? JSON.parse(local) : null;
+      });
+      const [loginUsername, setLoginUsername] = useState('');
+      const [loginPassword, setLoginPassword] = useState('');
+      const [usersList, setUsersList] = useState([]);
+
       const [theme, setTheme] = useState(localStorage.getItem('theme') || 'light');
       const [activeTab, setActiveTab] = useState('dashboard');
       const [billsSubTab, setBillsSubTab] = useState('sales'); 
+      const [reportsSubTab, setReportsSubTab] = useState('sales_summary'); 
+      const [reportsDateFilter, setReportsDateFilter] = useState('all'); 
       const [syncStatus, setSyncStatus] = useState('Connecting...');
 
-      // Clean default company settings (no pre-set company name)
       const [company, setCompany] = useState(() => {
         const local = localStorage.getItem('inv_company');
         return local ? JSON.parse(local) : {
@@ -127,14 +137,13 @@
       const [showCustDropdown, setShowCustDropdown] = useState(false);
       const custDropdownRef = useRef(null);
 
-      // Customer Directory Search
       const [customerDirectorySearch, setCustomerDirectorySearch] = useState('');
+      const [stockDirectorySearch, setStockDirectorySearch] = useState('');
 
       const [discount, setDiscount] = useState(0);
       const [discountType, setDiscountType] = useState('amount');
       const [paymentMethod, setPaymentMethod] = useState('cash');
       const [searchProduct, setSearchProduct] = useState('');
-      
       const [convertingOrderNo, setConvertingOrderNo] = useState(null);
 
       const [activeInvoice, setActiveInvoice] = useState(null);
@@ -152,6 +161,16 @@
 
       const [showEditBillModal, setShowEditBillModal] = useState(false);
       const [editingBill, setEditingBill] = useState(null);
+
+      // User Management Modals
+      const [showUserModal, setShowUserModal] = useState(false);
+      const [newUserForm, setNewUserForm] = useState({ username: '', password: '', role: 'salesman', canEditStock: false, canDeleteBills: false, canViewReports: true });
+      
+      const [showEditUserModal, setShowEditUserModal] = useState(false);
+      const [editingUser, setEditingUser] = useState(null);
+
+      const [showChangePassModal, setShowChangePassModal] = useState(false);
+      const [adminNewPass, setAdminNewPass] = useState('');
 
       useEffect(() => {
         if (theme === 'dark') {
@@ -183,10 +202,7 @@
             }
             setSyncStatus('Cloud Connected');
           },
-          (err) => {
-            console.error("Invoices sync error:", err);
-            setSyncStatus('Offline Mode');
-          }
+          (err) => { console.error("Invoices sync error:", err); setSyncStatus('Offline Mode'); }
         );
 
         const unsubCustomers = getCol('customers').onSnapshot(
@@ -211,6 +227,19 @@
           (err) => console.error("Products sync error:", err)
         );
 
+        const unsubUsers = getCol('users').onSnapshot(
+          (snapshot) => {
+            const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+            if (data.length === 0) {
+              const defaultAdmin = { username: 'admin', password: 'admin', role: 'admin', canEditStock: true, canDeleteBills: true, canViewReports: true };
+              getCol('users').add(defaultAdmin);
+            } else {
+              setUsersList(data);
+            }
+          },
+          (err) => console.error("Users sync error:", err)
+        );
+
         const unsubCompany = getCol('settings').doc('company').onSnapshot(
           (doc) => {
             if (doc.exists) {
@@ -225,6 +254,7 @@
           unsubInvoices();
           unsubCustomers();
           unsubProducts();
+          unsubUsers();
           unsubCompany();
         };
       }, []);
@@ -237,6 +267,104 @@
       useEffect(() => {
         if (window.lucide) window.lucide.createIcons();
       });
+
+      const handleLogin = (e) => {
+        e.preventDefault();
+        const found = usersList.find(u => u.username.toLowerCase() === loginUsername.trim().toLowerCase() && u.password === loginPassword);
+        if (found) {
+          const userObj = { id: found.id, username: found.username, role: found.role, canEditStock: found.canEditStock, canDeleteBills: found.canDeleteBills, canViewReports: found.canViewReports };
+          setCurrentUser(userObj);
+          sessionStorage.setItem('inv_current_user', JSON.stringify(userObj));
+          setActiveTab('dashboard');
+        } else {
+          alert('Invalid username or password. Default is admin / admin.');
+        }
+      };
+
+      const handleLogout = () => {
+        setCurrentUser(null);
+        sessionStorage.removeItem('inv_current_user');
+      };
+
+      const handleCreateUser = async (e) => {
+        e.preventDefault();
+        if (!newUserForm.username || !newUserForm.password) return;
+        try {
+          await getCol('users').add({
+            username: newUserForm.username.trim(),
+            password: newUserForm.password,
+            role: newUserForm.role,
+            canEditStock: newUserForm.canEditStock,
+            canDeleteBills: newUserForm.canDeleteBills,
+            canViewReports: newUserForm.canViewReports,
+            createdAt: new Date().toISOString()
+          });
+          alert(`User "${newUserForm.username}" created successfully!`);
+          setNewUserForm({ username: '', password: '', role: 'salesman', canEditStock: false, canDeleteBills: false, canViewReports: true });
+          setShowUserModal(false);
+        } catch(e) {
+          alert("Error creating user: " + e.message);
+        }
+      };
+
+      const openEditUser = (u) => {
+        setEditingUser({
+          id: u.id,
+          username: u.username,
+          password: u.password,
+          role: u.role || 'salesman',
+          canEditStock: !!u.canEditStock,
+          canDeleteBills: !!u.canDeleteBills,
+          canViewReports: u.canViewReports !== false
+        });
+        setShowEditUserModal(true);
+      };
+
+      const handleSaveEditedUser = async (e) => {
+        e.preventDefault();
+        if (!editingUser || !editingUser.id) return;
+        try {
+          await getCol('users').doc(editingUser.id).update({
+            password: editingUser.password,
+            role: editingUser.role,
+            canEditStock: editingUser.canEditStock,
+            canDeleteBills: editingUser.canDeleteBills,
+            canViewReports: editingUser.canViewReports,
+            updatedAt: new Date().toISOString()
+          });
+          alert(`Privileges updated for "${editingUser.username}"!`);
+          setShowEditUserModal(false);
+        } catch(e) {
+          alert("Error updating user: " + e.message);
+        }
+      };
+
+      const handleDeleteUser = async (u) => {
+        if (u.username === 'admin') {
+          alert("Cannot delete master admin account.");
+          return;
+        }
+        if (!confirm(`Delete user "${u.username}"?`)) return;
+        if (u.id) {
+          try { await getCol('users').doc(u.id).delete(); } catch(e) { console.error(e); }
+        }
+      };
+
+      const handleUpdateAdminPassword = async (e) => {
+        e.preventDefault();
+        if (!adminNewPass) return;
+        const adminDoc = usersList.find(u => u.username === 'admin');
+        if (adminDoc && adminDoc.id) {
+          try {
+            await getCol('users').doc(adminDoc.id).update({ password: adminNewPass });
+            alert("Admin password updated successfully!");
+            setShowChangePassModal(false);
+            setAdminNewPass('');
+          } catch(e) {
+            alert("Error updating password: " + e.message);
+          }
+        }
+      };
 
       const filteredCustomersForBilling = useMemo(() => {
         if (!customerSearchQuery.trim()) return customers;
@@ -259,6 +387,16 @@
           (c.trn && c.trn.toLowerCase().includes(q))
         );
       }, [customers, customerDirectorySearch]);
+
+      const filteredStockDirectory = useMemo(() => {
+        if (!stockDirectorySearch.trim()) return products;
+        const q = stockDirectorySearch.toLowerCase();
+        return products.filter(p => 
+          (p.name && p.name.toLowerCase().includes(q)) ||
+          (p.code && p.code.toLowerCase().includes(q)) ||
+          (p.category && p.category.toLowerCase().includes(q))
+        );
+      }, [products, stockDirectorySearch]);
 
       const cartCalculations = useMemo(() => {
         const subtotal = cart.reduce((acc, item) => acc + (item.price * item.qty), 0);
@@ -327,6 +465,7 @@
           type: isTaxInvoice ? 'Tax Invoice' : 'Sales Order',
           date: new Date().toISOString(),
           customer: selectedCustomer,
+          salesman: currentUser ? currentUser.username : 'admin',
           items: cart,
           company: company,
           subtotal: cartCalculations.subtotal,
@@ -442,12 +581,20 @@
       };
 
       const openAddProduct = () => {
+        if (currentUser && currentUser.role !== 'admin' && !currentUser.canEditStock) {
+          alert("You do not have permission to add or edit stock.");
+          return;
+        }
         setEditingProd(null);
         setProdForm({ name: '', code: '', price: '', stock: '', category: 'General' });
         setShowProdModal(true);
       };
 
       const openEditProduct = (prod) => {
+        if (currentUser && currentUser.role !== 'admin' && !currentUser.canEditStock) {
+          alert("You do not have permission to add or edit stock.");
+          return;
+        }
         setEditingProd(prod);
         setProdForm({
           name: prod.name || '',
@@ -464,7 +611,7 @@
         if (!prodForm.name || !prodForm.price) return;
         const payload = {
           name: prodForm.name,
-          code: prodForm.code || 'PRD-' + (products.length + 1),
+          code: prodForm.code || 'PRD-' + Math.floor(1000 + Math.random() * 9000),
           price: parseFloat(prodForm.price) || 0,
           stock: parseInt(prodForm.stock) || 0,
           vatRate: company.vatPercent,
@@ -479,6 +626,10 @@
       };
 
       const handleDeleteProduct = async (prod) => {
+        if (currentUser && currentUser.role !== 'admin' && !currentUser.canEditStock) {
+          alert("You do not have permission to delete stock.");
+          return;
+        }
         if (!confirm(`Delete product "${prod.name}"?`)) return;
         if (prod.id) {
           try { await getCol('products').doc(prod.id).delete(); } catch(e) { console.error(e); }
@@ -486,6 +637,10 @@
       };
 
       const openEditBill = (inv) => {
+        if (currentUser && currentUser.role !== 'admin' && !currentUser.canDeleteBills) {
+          alert("You do not have permission to edit bills.");
+          return;
+        }
         setEditingBill({
           ...inv,
           customerObj: inv.customer,
@@ -528,17 +683,48 @@
       };
 
       const handleDeleteBill = async (inv) => {
-        if (!confirm(`Delete document ${inv.invoiceNumber}?`)) return;
-        if (inv.id) {
-          try {
-            await getCol('invoices').doc(inv.id).delete();
-          } catch(e) {
-            console.error(e);
+        if (currentUser && currentUser.role !== 'admin' && !currentUser.canDeleteBills) {
+          alert("You do not have permission to delete bills.");
+          return;
+        }
+        if (!confirm(`Are you sure you want to delete document ${inv.invoiceNumber}?`)) return;
+        
+        try {
+          if (inv.status === 'Paid' || inv.type === 'Tax Invoice') {
+            const updatedProducts = products.map(p => {
+              const itemFound = inv.items?.find(i => i.id === p.id || i.name === p.name);
+              if (itemFound) {
+                const restoredStock = p.stock + itemFound.qty;
+                if (p.id) {
+                  getCol('products').doc(p.id).update({ stock: restoredStock }).catch(e => console.error(e));
+                }
+                return { ...p, stock: restoredStock };
+              }
+              return p;
+            });
+            setProducts(updatedProducts);
           }
+
+          if (inv.id) {
+            await getCol('invoices').doc(inv.id).delete();
+          } else {
+            const snap = await getCol('invoices').where('invoiceNumber', '==', inv.invoiceNumber).get();
+            snap.forEach(doc => doc.ref.delete());
+          }
+
+          setInvoices(prev => prev.filter(i => i.invoiceNumber !== inv.invoiceNumber));
+          alert("Bill deleted successfully and inventory stock restored.");
+        } catch(e) {
+          console.error("Delete bill error:", e);
+          alert("Error deleting bill: " + e.message);
         }
       };
 
       const handleSaveCompany = async () => {
+        if (currentUser && currentUser.role !== 'admin') {
+          alert("Only Admin can change company settings.");
+          return;
+        }
         try {
           await getCol('settings').doc('company').set(company);
           alert("Company settings saved to Cloud!");
@@ -561,6 +747,72 @@
         window.location.href = `mailto:${email}?subject=${subject}&body=${body}`;
       };
 
+      // --- REPORTS CALCULATIONS & EXPORTS ---
+      const filteredInvoicesForReports = useMemo(() => {
+        const todayStr = new Date().toISOString().split('T')[0];
+        const paidInvs = invoices.filter(i => i.status === 'Paid');
+        if (reportsDateFilter === 'today') {
+          return paidInvs.filter(i => i.date && i.date.startsWith(todayStr));
+        } else if (reportsDateFilter === 'month') {
+          const currentMonth = todayStr.substring(0, 7); 
+          return paidInvs.filter(i => i.date && i.date.startsWith(currentMonth));
+        }
+        return paidInvs;
+      }, [invoices, reportsDateFilter]);
+
+      const reportsSummary = useMemo(() => {
+        const totalRev = filteredInvoicesForReports.reduce((acc, inv) => acc + (inv.grandTotal || 0), 0);
+        const totalSub = filteredInvoicesForReports.reduce((acc, inv) => acc + (inv.subtotal || 0), 0);
+        const totalDisc = filteredInvoicesForReports.reduce((acc, inv) => acc + (inv.discount || 0), 0);
+        const totalVat = filteredInvoicesForReports.reduce((acc, inv) => acc + (inv.vatAmount || 0), 0);
+        const totalBills = filteredInvoicesForReports.length;
+        return { totalRev, totalSub, totalDisc, totalVat, totalBills };
+      }, [filteredInvoicesForReports]);
+
+      const downloadCSV = (filename, csvContent) => {
+        const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.setAttribute('href', url);
+        link.setAttribute('download', filename);
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+      };
+
+      const exportReportCSV = () => {
+        if (reportsSubTab === 'sales_summary' || reportsSubTab === 'vat_report') {
+          let csv = 'Invoice Number,Date,Salesman,Customer Name,Customer TRN,Subtotal (AED),Discount (AED),VAT 5% (AED),Grand Total (AED)\n';
+          filteredInvoicesForReports.forEach(inv => {
+            csv += `"${inv.invoiceNumber}","${new Date(inv.date).toLocaleDateString()}","${inv.salesman || 'admin'}","${inv.customer?.name || ''}","${inv.customer?.trn || ''}",${inv.subtotal?.toFixed(2)},${inv.discount?.toFixed(2)},${inv.vatAmount?.toFixed(2)},${inv.grandTotal?.toFixed(2)}\n`;
+          });
+          downloadCSV(`Sales_Report_${reportsDateFilter}.csv`, csv);
+        } else if (reportsSubTab === 'salesman_report') {
+          let csv = 'Salesman,Total Invoices,Total Sales (AED)\n';
+          const salesmen = [...new Set(filteredInvoicesForReports.map(i => i.salesman || 'admin'))];
+          salesmen.forEach(sm => {
+            const smInvs = filteredInvoicesForReports.filter(i => (i.salesman || 'admin') === sm);
+            const total = smInvs.reduce((acc, i) => acc + (i.grandTotal || 0), 0);
+            csv += `"${sm}",${smInvs.length},${total.toFixed(2)}\n`;
+          });
+          downloadCSV(`Salesman_Report_${reportsDateFilter}.csv`, csv);
+        } else if (reportsSubTab === 'stock_report') {
+          let csv = 'Product Code,Product Name,Category,Unit Price (AED),Remaining Stock,Total Valuation (AED)\n';
+          products.forEach(p => {
+            csv += `"${p.code || ''}","${p.name}","${p.category || 'General'}",${p.price.toFixed(2)},${p.stock},${(p.price * p.stock).toFixed(2)}\n`;
+          });
+          downloadCSV(`Stock_Valuation_Report.csv`, csv);
+        } else if (reportsSubTab === 'customer_report') {
+          let csv = 'Customer Name,Mobile,Email,TRN,Total Bills,Total Spent (AED)\n';
+          customers.forEach(c => {
+            const custInvs = filteredInvoicesForReports.filter(i => i.customer?.name === c.name);
+            const spent = custInvs.reduce((acc, i) => acc + (i.grandTotal || 0), 0);
+            csv += `"${c.name}","${c.phone}","${c.email}","${c.trn}",${custInvs.length},${spent.toFixed(2)}\n`;
+          });
+          downloadCSV(`Customer_Sales_Report_${reportsDateFilter}.csv`, csv);
+        }
+      };
+
       const stats = useMemo(() => {
         const todayStr = new Date().toISOString().split('T')[0];
         const activeInvoices = invoices.filter(i => i.status === 'Paid');
@@ -576,6 +828,35 @@
       const salesInvoices = useMemo(() => invoices.filter(i => i.status === 'Paid' || i.status === 'Returned' || i.type === 'Tax Invoice'), [invoices]);
       const salesOrders = useMemo(() => invoices.filter(i => i.status === 'Sales Order' || i.type === 'Sales Order'), [invoices]);
 
+      // --- RENDER LOGIN PAGE IF NOT LOGGED IN ---
+      if (!currentUser) {
+        return (
+          <div className="flex items-center justify-center min-h-screen bg-gray-100 dark:bg-gray-900 p-4">
+            <div className="bg-white dark:bg-gray-800 p-6 sm:p-8 rounded-3xl shadow-xl max-w-sm w-full space-y-6 border border-gray-100 dark:border-gray-700">
+              <div className="text-center space-y-2">
+                <div className="w-14 h-14 bg-brand-600 rounded-2xl mx-auto flex items-center justify-center text-white text-2xl font-bold shadow-lg">🇦🇪</div>
+                <h1 className="text-xl font-extrabold dark:text-white">Invoicify UAE</h1>
+                <p className="text-xs text-gray-500 dark:text-gray-400">Sign in to your account</p>
+              </div>
+              <form onSubmit={handleLogin} className="space-y-4 text-xs">
+                <div>
+                  <label className="font-semibold text-gray-500 dark:text-gray-400 block mb-1">Username</label>
+                  <input type="text" required value={loginUsername} onChange={e => setLoginUsername(e.target.value)} placeholder="e.g. admin" className="w-full p-3 bg-gray-50 dark:bg-gray-700 border dark:border-gray-600 rounded-xl dark:text-white" />
+                </div>
+                <div>
+                  <label className="font-semibold text-gray-500 dark:text-gray-400 block mb-1">Password</label>
+                  <input type="password" required value={loginPassword} onChange={e => setLoginPassword(e.target.value)} placeholder="••••••••" className="w-full p-3 bg-gray-50 dark:bg-gray-700 border dark:border-gray-600 rounded-xl dark:text-white" />
+                </div>
+                <button type="submit" className="w-full bg-brand-600 hover:bg-brand-700 text-white font-bold py-3.5 rounded-xl shadow-md cursor-pointer text-sm">Sign In</button>
+              </form>
+              <div className="text-center text-[11px] text-gray-400">
+                Default Admin Login: <strong className="text-gray-600 dark:text-gray-300">admin / admin</strong>
+              </div>
+            </div>
+          </div>
+        );
+      }
+
       return (
         <div className="flex flex-col md:flex-row min-h-screen">
           {/* Sidebar */}
@@ -586,7 +867,7 @@
                   <div className="w-10 h-10 rounded-xl bg-brand-600 flex items-center justify-center text-white font-bold text-lg shadow-md">🇦🇪</div>
                   <div>
                     <h1 className="font-bold text-sm leading-tight line-clamp-1 dark:text-white">{company.name}</h1>
-                    <span className="text-xs text-gray-500 dark:text-gray-400">TRN: {company.trn || 'Not Set'}</span>
+                    <span className="text-xs text-gray-500 dark:text-gray-400 capitalize">Role: {currentUser.role}</span>
                   </div>
                 </div>
                 <button onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')} className="p-2 rounded-lg bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300">
@@ -601,7 +882,9 @@
                   { id: 'invoices', label: 'Invoices & Receipts', icon: 'receipt' },
                   { id: 'products', label: 'Stock & Inventory', icon: 'package' },
                   { id: 'customers', label: 'Customers', icon: 'users' },
-                  { id: 'reports', label: 'Settings & Company', icon: 'settings' },
+                  ...(currentUser.role === 'admin' || currentUser.canViewReports ? [{ id: 'reports', label: 'Reports & Hub', icon: 'bar-chart-3' }] : []),
+                  ...(currentUser.role === 'admin' ? [{ id: 'users_tab', label: 'User Privileges', icon: 'shield' }] : []),
+                  ...(currentUser.role === 'admin' ? [{ id: 'settings', label: 'Company Settings', icon: 'settings' }] : []),
                 ].map(nav => (
                   <button
                     key={nav.id}
@@ -616,10 +899,14 @@
               </nav>
             </div>
 
-            <div className="p-3 border-t border-gray-200 dark:border-gray-700 text-xs">
+            <div className="p-3 border-t border-gray-200 dark:border-gray-700 text-xs space-y-2">
+              <div className="flex items-center justify-between">
+                <span className="font-bold dark:text-gray-300">👤 {currentUser.username}</span>
+                <button onClick={handleLogout} className="text-red-600 font-bold hover:underline">Logout</button>
+              </div>
               <div className="flex items-center space-x-2">
-                <span className={`w-2.5 h-2.5 rounded-full ${syncStatus === 'Cloud Connected' ? 'bg-emerald-500 animate-pulse' : 'bg-amber-500'}`}></span>
-                <span className="font-semibold dark:text-gray-300">{syncStatus}</span>
+                <span className={`w-2 h-2 rounded-full ${syncStatus === 'Cloud Connected' ? 'bg-emerald-500 animate-pulse' : 'bg-amber-500'}`}></span>
+                <span className="text-[10px] text-gray-400">{syncStatus}</span>
               </div>
             </div>
           </aside>
@@ -629,8 +916,8 @@
             <div className="flex items-center space-x-2">
               <div className="w-8 h-8 rounded-lg bg-brand-600 flex items-center justify-center text-white font-bold text-xs">🇦🇪</div>
               <div>
-                <h1 className="font-bold text-xs line-clamp-1 dark:text-white">{company.name}</h1>
-                <span className="text-[10px] text-emerald-600 font-semibold">{syncStatus}</span>
+                <h1 className="font-bold text-xs line-clamp-1 dark:text-white">{currentUser.username} ({currentUser.role})</h1>
+                <button onClick={handleLogout} className="text-[10px] text-red-600 font-bold underline">Sign Out</button>
               </div>
             </div>
             <button onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')} className="p-1.5 rounded-lg bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300">
@@ -697,7 +984,7 @@
                   )}
 
                   <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 md:gap-3 max-h-[40vh] lg:max-h-[calc(100vh-220px)] overflow-y-auto">
-                    {products.filter(p => p.name.toLowerCase().includes(searchProduct.toLowerCase())).map((product, idx) => (
+                    {products.filter(p => p.name.toLowerCase().includes(searchProduct.toLowerCase()) || (p.code && p.code.toLowerCase().includes(searchProduct.toLowerCase()))).map((product, idx) => (
                       <div key={product.id || idx} onClick={() => addToCart(product)} className="bg-white dark:bg-gray-800 p-2.5 md:p-3 rounded-2xl border border-gray-100 dark:border-gray-700 hover:border-brand-500 cursor-pointer shadow-sm flex flex-col justify-between">
                         <div>
                           <div className="flex justify-between text-[10px] text-gray-400 font-bold mb-1">
@@ -709,9 +996,6 @@
                         <div className="mt-2 font-bold text-xs md:text-sm text-brand-600">{product.price.toFixed(2)} AED</div>
                       </div>
                     ))}
-                    {products.length === 0 && (
-                      <div className="col-span-full p-6 text-center text-gray-400 text-xs">No products in inventory. Please add items in Stock & Inventory.</div>
-                    )}
                   </div>
                 </div>
 
@@ -722,7 +1006,6 @@
                       <button onClick={openAddCustomer} className="text-xs text-brand-600 font-bold hover:underline">+ New Cust</button>
                     </div>
 
-                    {/* EASY CUSTOMER SEARCH AUTOCOMPLETE INPUT */}
                     <div className="relative mb-3" ref={custDropdownRef}>
                       <label className="text-[10px] text-gray-400 font-bold block mb-1">Search Customer by Name / Mobile / Email:</label>
                       <input
@@ -802,7 +1085,7 @@
                     <div className="overflow-x-auto">
                       <table className="w-full text-left text-xs md:text-sm">
                         <thead className="bg-gray-50 dark:bg-gray-700/50 text-[10px] uppercase text-gray-500 dark:text-gray-400">
-                          <tr><th className="p-3">Doc #</th><th className="p-3">Customer</th><th className="p-3">Total</th><th className="p-3 text-right">Actions</th></tr>
+                          <tr><th className="p-3">Doc #</th><th className="p-3">Customer</th><th className="p-3">Salesman</th><th className="p-3">Total</th><th className="p-3 text-right">Actions</th></tr>
                         </thead>
                         <tbody className="divide-y divide-gray-100 dark:divide-gray-700">
                           {salesInvoices.map((inv, idx) => (
@@ -812,11 +1095,16 @@
                                 {inv.preOrderReference && <div className="text-[10px] text-gray-400">Ref: {inv.preOrderReference}</div>}
                               </td>
                               <td className="p-3 dark:text-gray-200">{inv.customer?.name}</td>
+                              <td className="p-3 text-gray-500 dark:text-gray-400 font-semibold">{inv.salesman || 'admin'}</td>
                               <td className="p-3 font-bold dark:text-white">{inv.grandTotal?.toFixed(2)} AED</td>
                               <td className="p-3 text-right space-x-1">
                                 <button onClick={() => { setActiveInvoice(inv); setShowPrintModal(true); }} className="p-1.5 bg-gray-100 dark:bg-gray-700 dark:text-gray-300 rounded" title="Print"><i data-lucide="printer" className="w-3.5 h-3.5"></i></button>
-                                <button onClick={() => openEditBill(inv)} className="p-1.5 bg-brand-50 dark:bg-brand-900/30 text-brand-600 rounded" title="Edit"><i data-lucide="edit" className="w-3.5 h-3.5"></i></button>
-                                <button onClick={() => handleDeleteBill(inv)} className="p-1.5 bg-red-50 dark:bg-red-900/30 text-red-600 rounded" title="Delete"><i data-lucide="trash-2" className="w-3.5 h-3.5"></i></button>
+                                {(currentUser.role === 'admin' || currentUser.canDeleteBills) && (
+                                  <>
+                                    <button onClick={() => openEditBill(inv)} className="p-1.5 bg-brand-50 dark:bg-brand-900/30 text-brand-600 rounded" title="Edit"><i data-lucide="edit" className="w-3.5 h-3.5"></i></button>
+                                    <button onClick={() => handleDeleteBill(inv)} className="p-1.5 bg-red-50 dark:bg-red-900/30 text-red-600 rounded" title="Delete"><i data-lucide="trash-2" className="w-3.5 h-3.5"></i></button>
+                                  </>
+                                )}
                               </td>
                             </tr>
                           ))}
@@ -831,13 +1119,14 @@
                     <div className="overflow-x-auto">
                       <table className="w-full text-left text-xs md:text-sm">
                         <thead className="bg-gray-50 dark:bg-gray-700/50 text-[10px] uppercase text-gray-500 dark:text-gray-400">
-                          <tr><th className="p-3">Order #</th><th className="p-3">Customer</th><th className="p-3">Total</th><th className="p-3">Confirm</th><th className="p-3 text-right">Actions</th></tr>
+                          <tr><th className="p-3">Order #</th><th className="p-3">Customer</th><th className="p-3">Salesman</th><th className="p-3">Total</th><th className="p-3">Confirm</th><th className="p-3 text-right">Actions</th></tr>
                         </thead>
                         <tbody className="divide-y divide-gray-100 dark:divide-gray-700">
                           {salesOrders.map((inv, idx) => (
                             <tr key={idx}>
                               <td className="p-3 font-bold text-amber-600">{inv.invoiceNumber}</td>
                               <td className="p-3 dark:text-gray-200">{inv.customer?.name}</td>
+                              <td className="p-3 text-gray-500 dark:text-gray-400 font-semibold">{inv.salesman || 'admin'}</td>
                               <td className="p-3 font-bold dark:text-white">{inv.grandTotal?.toFixed(2)} AED</td>
                               <td className="p-3">
                                 <button type="button" onClick={() => redirectToBillingWithOrder(inv)} className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold px-3 py-1.5 rounded-lg text-xs flex items-center space-x-1 shadow cursor-pointer">
@@ -847,13 +1136,14 @@
                               </td>
                               <td className="p-3 text-right space-x-1">
                                 <button onClick={() => { setActiveInvoice(inv); setShowPrintModal(true); }} className="p-1.5 bg-gray-100 dark:bg-gray-700 dark:text-gray-300 rounded" title="Print"><i data-lucide="printer" className="w-3.5 h-3.5"></i></button>
-                                <button onClick={() => openEditBill(inv)} className="p-1.5 bg-brand-50 dark:bg-brand-900/30 text-brand-600 rounded" title="Edit"><i data-lucide="edit" className="w-3.5 h-3.5"></i></button>
-                                <button onClick={() => handleDeleteBill(inv)} className="p-1.5 bg-red-50 dark:bg-red-900/30 text-red-600 rounded" title="Delete"><i data-lucide="trash-2" className="w-3.5 h-3.5"></i></button>
+                                {(currentUser.role === 'admin' || currentUser.canDeleteBills) && (
+                                  <button onClick={() => handleDeleteBill(inv)} className="p-1.5 bg-red-50 dark:bg-red-900/30 text-red-600 rounded" title="Delete"><i data-lucide="trash-2" className="w-3.5 h-3.5"></i></button>
+                                )}
                               </td>
                             </tr>
                           ))}
                           {salesOrders.length === 0 && (
-                            <tr><td colSpan="5" className="p-6 text-center text-gray-400">No pending Sales Orders.</td></tr>
+                            <tr><td colSpan="6" className="p-6 text-center text-gray-400">No pending Sales Orders.</td></tr>
                           )}
                         </tbody>
                       </table>
@@ -865,22 +1155,42 @@
 
             {activeTab === 'products' && (
               <div className="space-y-4">
-                <div className="flex items-center justify-between">
+                <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
                   <h2 className="text-base md:text-xl font-bold dark:text-white">Products Inventory</h2>
-                  <button onClick={openAddProduct} className="bg-brand-600 text-white px-3 py-2 rounded-xl text-xs font-bold shadow">Add Product</button>
+                  <div className="flex items-center space-x-2 w-full sm:w-auto">
+                    <input
+                      type="text"
+                      placeholder="Search stock by name/code..."
+                      value={stockDirectorySearch}
+                      onChange={(e) => setStockDirectorySearch(e.target.value)}
+                      className="p-1.5 md:p-2 text-xs bg-white dark:bg-gray-800 border dark:border-gray-700 rounded-xl w-full sm:w-56 dark:text-white"
+                    />
+                    {(currentUser.role === 'admin' || currentUser.canEditStock) && (
+                      <button onClick={openAddProduct} className="bg-brand-600 text-white px-3 py-2 rounded-xl text-xs font-bold shadow whitespace-nowrap">Add Product</button>
+                    )}
+                  </div>
                 </div>
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
-                  {products.map((p, idx) => (
-                    <div key={p.id || idx} className="bg-white dark:bg-gray-800 p-3 rounded-2xl border dark:border-gray-700 flex justify-between items-center">
-                      <div><h4 className="font-bold text-sm dark:text-white">{p.name}</h4><div className="text-xs text-brand-600">{p.price.toFixed(2)} AED</div></div>
-                      <div className="text-right">
-                        <span className="text-xs font-bold px-2 py-0.5 bg-emerald-100 dark:bg-emerald-900/30 text-emerald-800 dark:text-emerald-300 rounded block mb-1">{p.stock} Stock</span>
-                        <button onClick={() => openEditProduct(p)} className="text-[10px] text-brand-600 underline font-bold">Edit</button>
+                  {filteredStockDirectory.map((p, idx) => (
+                    <div key={p.id || idx} className="bg-white dark:bg-gray-800 p-3.5 rounded-2xl border dark:border-gray-700 flex justify-between items-center shadow-sm">
+                      <div>
+                        <div className="text-[10px] text-gray-400 font-mono font-bold">{p.code || 'PRD-000'}</div>
+                        <h4 className="font-bold text-sm dark:text-white mt-0.5">{p.name}</h4>
+                        <div className="text-xs text-brand-600 font-semibold mt-1">{p.price.toFixed(2)} AED</div>
+                      </div>
+                      <div className="text-right space-y-1">
+                        <span className="text-xs font-bold px-2 py-0.5 bg-emerald-100 dark:bg-emerald-900/30 text-emerald-800 dark:text-emerald-300 rounded block">{p.stock} Stock</span>
+                        {(currentUser.role === 'admin' || currentUser.canEditStock) && (
+                          <div className="flex justify-end space-x-2 pt-1">
+                            <button onClick={() => openEditProduct(p)} className="p-1 bg-gray-100 dark:bg-gray-700 rounded text-brand-600" title="Edit Product"><i data-lucide="edit" className="w-3.5 h-3.5"></i></button>
+                            <button onClick={() => handleDeleteProduct(p)} className="p-1 bg-red-50 dark:bg-red-900/30 rounded text-red-600" title="Delete Product"><i data-lucide="trash-2" className="w-3.5 h-3.5"></i></button>
+                          </div>
+                        )}
                       </div>
                     </div>
                   ))}
-                  {products.length === 0 && (
-                    <div className="col-span-full p-8 text-center text-gray-400 text-xs">No products found. Click "Add Product" to create your inventory list.</div>
+                  {filteredStockDirectory.length === 0 && (
+                    <div className="col-span-full p-8 text-center text-gray-400 text-xs">No products found matching your search.</div>
                   )}
                 </div>
               </div>
@@ -928,13 +1238,226 @@
               </div>
             )}
 
-            {activeTab === 'reports' && (
+            {/* USER MANAGEMENT TAB (ADMIN ONLY) */}
+            {activeTab === 'users_tab' && currentUser.role === 'admin' && (
+              <div className="space-y-4">
+                <div className="flex items-center justify-between">
+                  <h2 className="text-base md:text-xl font-bold dark:text-white">Staff & Salesman Privileges</h2>
+                  <div className="flex space-x-2">
+                    <button onClick={() => setShowChangePassModal(true)} className="bg-gray-200 dark:bg-gray-700 dark:text-white px-3 py-2 rounded-xl text-xs font-bold shadow">Change Admin Password</button>
+                    <button onClick={() => setShowUserModal(true)} className="bg-brand-600 text-white px-3 py-2 rounded-xl text-xs font-bold shadow">+ Create User</button>
+                  </div>
+                </div>
+
+                <div className="bg-white dark:bg-gray-800 rounded-2xl border dark:border-gray-700 overflow-hidden shadow-sm">
+                  <table className="w-full text-left text-xs md:text-sm">
+                    <thead className="bg-gray-50 dark:bg-gray-700/50 text-[10px] uppercase text-gray-400">
+                      <tr><th className="p-3">Username</th><th className="p-3">Role</th><th className="p-3">Edit Stock?</th><th className="p-3">Delete Bills?</th><th className="p-3 text-right">Action</th></tr>
+                    </thead>
+                    <tbody className="divide-y divide-gray-100 dark:divide-gray-700">
+                      {usersList.map((u, idx) => (
+                        <tr key={u.id || idx}>
+                          <td className="p-3 font-bold dark:text-white">{u.username}</td>
+                          <td className="p-3 capitalize"><span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${u.role === 'admin' ? 'bg-purple-100 text-purple-700' : 'bg-blue-100 text-blue-700'}`}>{u.role}</span></td>
+                          <td className="p-3">{u.canEditStock ? '✅ Yes' : '❌ No'}</td>
+                          <td className="p-3">{u.canDeleteBills ? '✅ Yes' : '❌ No'}</td>
+                          <td className="p-3 text-right space-x-1">
+                            <button onClick={() => openEditUser(u)} className="p-1.5 bg-brand-50 dark:bg-brand-900/30 text-brand-600 rounded" title="Edit Privileges"><i data-lucide="edit" className="w-3.5 h-3.5"></i></button>
+                            {u.username !== 'admin' && (
+                              <button onClick={() => handleDeleteUser(u)} className="p-1.5 bg-red-50 dark:bg-red-900/30 text-red-600 rounded" title="Delete User"><i data-lucide="trash-2" className="w-3.5 h-3.5"></i></button>
+                            )}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
+
+            {/* REPORTS & ANALYTICS HUB TAB */}
+            {activeTab === 'reports' && (currentUser.role === 'admin' || currentUser.canViewReports) && (
+              <div className="space-y-4">
+                <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+                  <h2 className="text-base md:text-xl font-bold dark:text-white">Reports & Analytics Hub</h2>
+                  <div className="flex items-center space-x-2">
+                    <select
+                      value={reportsDateFilter}
+                      onChange={(e) => setReportsDateFilter(e.target.value)}
+                      className="p-2 text-xs bg-white dark:bg-gray-800 border dark:border-gray-700 rounded-xl dark:text-white">
+                      <option value="today">Today's Report</option>
+                      <option value="month">This Month</option>
+                      <option value="all">All Time</option>
+                    </select>
+                    <button onClick={exportReportCSV} className="bg-emerald-600 hover:bg-emerald-700 text-white px-3 py-2 rounded-xl text-xs font-bold flex items-center space-x-1 shadow">
+                      <i data-lucide="download" className="w-3.5 h-3.5"></i>
+                      <span>Download CSV</span>
+                    </button>
+                    <button onClick={() => window.print()} className="bg-brand-600 hover:bg-brand-700 text-white px-3 py-2 rounded-xl text-xs font-bold flex items-center space-x-1 shadow">
+                      <i data-lucide="printer" className="w-3.5 h-3.5"></i>
+                      <span>Print</span>
+                    </button>
+                  </div>
+                </div>
+
+                <div className="flex border-b border-gray-200 dark:border-gray-700 overflow-x-auto no-scrollbar">
+                  {[
+                    { id: 'sales_summary', label: 'Sales Summary' },
+                    { id: 'salesman_report', label: 'Salesman Sales' },
+                    { id: 'vat_report', label: 'UAE VAT Return (5%)' },
+                    { id: 'stock_report', label: 'Stock Valuation' },
+                    { id: 'customer_report', label: 'Customer Sales' },
+                  ].map(tab => (
+                    <button
+                      key={tab.id}
+                      onClick={() => setReportsSubTab(tab.id)}
+                      className={`pb-2.5 px-4 font-bold text-xs md:text-sm border-b-2 whitespace-nowrap ${
+                        reportsSubTab === tab.id ? 'border-brand-600 text-brand-600 dark:text-brand-400' : 'border-transparent text-gray-500'
+                      }`}>
+                      {tab.label}
+                    </button>
+                  ))}
+                </div>
+
+                {reportsSubTab === 'sales_summary' && (
+                  <div className="space-y-4">
+                    <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+                      <div className="bg-white dark:bg-gray-800 p-4 rounded-2xl border dark:border-gray-700 shadow-sm">
+                        <span className="text-xs font-semibold text-gray-400 uppercase">Gross Sales</span>
+                        <div className="text-lg md:text-xl font-extrabold mt-1 dark:text-white">{reportsSummary.totalRev.toFixed(2)} AED</div>
+                      </div>
+                      <div className="bg-white dark:bg-gray-800 p-4 rounded-2xl border dark:border-gray-700 shadow-sm">
+                        <span className="text-xs font-semibold text-gray-400 uppercase">Total Discounts</span>
+                        <div className="text-lg md:text-xl font-extrabold mt-1 text-red-500">-{reportsSummary.totalDisc.toFixed(2)} AED</div>
+                      </div>
+                      <div className="bg-white dark:bg-gray-800 p-4 rounded-2xl border dark:border-gray-700 shadow-sm">
+                        <span className="text-xs font-semibold text-gray-400 uppercase">Collected VAT (5%)</span>
+                        <div className="text-lg md:text-xl font-extrabold mt-1 dark:text-white">{reportsSummary.totalVat.toFixed(2)} AED</div>
+                      </div>
+                      <div className="bg-white dark:bg-gray-800 p-4 rounded-2xl border dark:border-gray-700 shadow-sm">
+                        <span className="text-xs font-semibold text-gray-400 uppercase">Completed Bills</span>
+                        <div className="text-lg md:text-xl font-extrabold mt-1 dark:text-white">{reportsSummary.totalBills}</div>
+                      </div>
+                    </div>
+
+                    <div className="bg-white dark:bg-gray-800 rounded-2xl border dark:border-gray-700 overflow-hidden shadow-sm">
+                      <table className="w-full text-left text-xs md:text-sm">
+                        <thead className="bg-gray-50 dark:bg-gray-700/50 text-[10px] uppercase text-gray-400">
+                          <tr><th className="p-3">Doc #</th><th className="p-3">Date</th><th className="p-3">Salesman</th><th className="p-3">Customer</th><th className="p-3 text-right">Total (AED)</th></tr>
+                        </thead>
+                        <tbody className="divide-y divide-gray-100 dark:divide-gray-700">
+                          {filteredInvoicesForReports.map((inv, idx) => (
+                            <tr key={idx}>
+                              <td className="p-3 font-bold text-brand-600">{inv.invoiceNumber}</td>
+                              <td className="p-3">{new Date(inv.date).toLocaleDateString()}</td>
+                              <td className="p-3 font-semibold">{inv.salesman || 'admin'}</td>
+                              <td className="p-3">{inv.customer?.name}</td>
+                              <td className="p-3 text-right font-bold dark:text-white">{inv.grandTotal?.toFixed(2)}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                )}
+
+                {/* SALESMAN-WISE REPORT */}
+                {reportsSubTab === 'salesman_report' && (
+                  <div className="bg-white dark:bg-gray-800 rounded-2xl border dark:border-gray-700 overflow-hidden shadow-sm">
+                    <table className="w-full text-left text-xs md:text-sm">
+                      <thead className="bg-gray-50 dark:bg-gray-700/50 text-[10px] uppercase text-gray-400">
+                        <tr><th className="p-3">Salesman Name</th><th className="p-3 text-center">Total Invoices Processed</th><th className="p-3 text-right">Total Sales Revenue (AED)</th></tr>
+                      </thead>
+                      <tbody className="divide-y divide-gray-100 dark:divide-gray-700">
+                        {[...new Set(filteredInvoicesForReports.map(i => i.salesman || 'admin'))].map((sm, idx) => {
+                          const smInvs = filteredInvoicesForReports.filter(i => (i.salesman || 'admin') === sm);
+                          const total = smInvs.reduce((acc, i) => acc + (i.grandTotal || 0), 0);
+                          return (
+                            <tr key={idx}>
+                              <td className="p-3 font-bold dark:text-white">👤 {sm}</td>
+                              <td className="p-3 text-center font-bold">{smInvs.length}</td>
+                              <td className="p-3 text-right font-extrabold text-brand-600">{total.toFixed(2)} AED</td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+
+                {reportsSubTab === 'vat_report' && (
+                  <div className="space-y-4">
+                    <div className="bg-white dark:bg-gray-800 p-5 rounded-2xl border dark:border-gray-700 space-y-3 text-xs md:text-sm">
+                      <h3 className="font-bold text-sm md:text-base border-b pb-2 dark:text-white">UAE FTA VAT Return Statement (5%)</h3>
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div className="space-y-2 bg-gray-50 dark:bg-gray-700/50 p-3 rounded-xl">
+                          <div className="flex justify-between"><span>Standard Rated Supplies (Taxable):</span><strong>{reportsSummary.totalSub.toFixed(2)} AED</strong></div>
+                          <div className="flex justify-between"><span>Total Discounts:</span><strong className="text-red-500">-{reportsSummary.totalDisc.toFixed(2)} AED</strong></div>
+                          <div className="flex justify-between border-t pt-1 font-bold"><span>Net Taxable Amount:</span><span>{(reportsSummary.totalSub - reportsSummary.totalDisc).toFixed(2)} AED</span></div>
+                        </div>
+                        <div className="space-y-2 bg-brand-50 dark:bg-brand-900/30 p-3 rounded-xl border border-brand-100 dark:border-brand-800">
+                          <div className="flex justify-between text-brand-900 dark:text-brand-200"><span>Output VAT Due (5%):</span><strong className="text-base">{reportsSummary.totalVat.toFixed(2)} AED</strong></div>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {reportsSubTab === 'stock_report' && (
+                  <div className="bg-white dark:bg-gray-800 rounded-2xl border dark:border-gray-700 overflow-hidden shadow-sm">
+                    <table className="w-full text-left text-xs md:text-sm">
+                      <thead className="bg-gray-50 dark:bg-gray-700/50 text-[10px] uppercase text-gray-400">
+                        <tr><th className="p-3">SKU / Code</th><th className="p-3">Product Name</th><th className="p-3">Price</th><th className="p-3 text-center">Stock</th><th className="p-3 text-right">Valuation</th></tr>
+                      </thead>
+                      <tbody className="divide-y divide-gray-100 dark:divide-gray-700">
+                        {products.map((p, idx) => (
+                          <tr key={idx}>
+                            <td className="p-3 font-mono text-gray-500">{p.code || 'PRD'}</td>
+                            <td className="p-3 font-bold dark:text-white">{p.name}</td>
+                            <td className="p-3">{p.price.toFixed(2)} AED</td>
+                            <td className="p-3 text-center font-bold text-emerald-600">{p.stock}</td>
+                            <td className="p-3 text-right font-bold dark:text-white">{(p.price * p.stock).toFixed(2)} AED</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+
+                {reportsSubTab === 'customer_report' && (
+                  <div className="bg-white dark:bg-gray-800 rounded-2xl border dark:border-gray-700 overflow-hidden shadow-sm">
+                    <table className="w-full text-left text-xs md:text-sm">
+                      <thead className="bg-gray-50 dark:bg-gray-700/50 text-[10px] uppercase text-gray-400">
+                        <tr><th className="p-3">Customer Name</th><th className="p-3">Mobile</th><th className="p-3 text-center">Bills Count</th><th className="p-3 text-right">Total Spent</th></tr>
+                      </thead>
+                      <tbody className="divide-y divide-gray-100 dark:divide-gray-700">
+                        {customers.map((c, idx) => {
+                          const custInvs = filteredInvoicesForReports.filter(i => i.customer?.name === c.name);
+                          const spent = custInvs.reduce((acc, i) => acc + (i.grandTotal || 0), 0);
+                          return (
+                            <tr key={idx}>
+                              <td className="p-3 font-bold dark:text-white">{c.name}</td>
+                              <td className="p-3">{c.phone}</td>
+                              <td className="p-3 text-center font-bold">{custInvs.length}</td>
+                              <td className="p-3 text-right font-bold text-brand-600">{spent.toFixed(2)} AED</td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {activeTab === 'settings' && currentUser.role === 'admin' && (
               <div className="space-y-4">
                 <div className="flex items-center justify-between"><h2 className="text-base md:text-xl font-bold dark:text-white">Company Settings</h2><button onClick={handleSaveCompany} className="bg-brand-600 text-white px-4 py-2 rounded-xl text-xs font-bold shadow">Save</button></div>
                 <div className="bg-white dark:bg-gray-800 p-4 rounded-2xl border dark:border-gray-700 max-w-lg space-y-3 text-xs">
                   <div><label className="font-semibold text-gray-500 dark:text-gray-400">Business Name</label><input type="text" value={company.name} onChange={(e) => setCompany({ ...company, name: e.target.value })} className="w-full p-2 border dark:border-gray-700 rounded mt-1 font-bold dark:bg-gray-700 dark:text-white" /></div>
                   <div><label className="font-semibold text-gray-500 dark:text-gray-400">TRN</label><input type="text" value={company.trn} onChange={(e) => setCompany({ ...company, trn: e.target.value })} className="w-full p-2 border dark:border-gray-700 rounded mt-1 font-mono dark:bg-gray-700 dark:text-white" /></div>
                   <div><label className="font-semibold text-gray-500 dark:text-gray-400">Phone</label><input type="text" value={company.phone} onChange={(e) => setCompany({ ...company, phone: e.target.value })} className="w-full p-2 border dark:border-gray-700 rounded mt-1 dark:bg-gray-700 dark:text-white" /></div>
+                  <div><label className="font-semibold text-gray-500 dark:text-gray-400">Email</label><input type="email" value={company.email} onChange={(e) => setCompany({ ...company, email: e.target.value })} className="w-full p-2 border dark:border-gray-700 rounded mt-1 dark:bg-gray-700 dark:text-white" /></div>
                   <div><label className="font-semibold text-gray-500 dark:text-gray-400">Address</label><input type="text" value={company.address} onChange={(e) => setCompany({ ...company, address: e.target.value })} className="w-full p-2 border dark:border-gray-700 rounded mt-1 dark:bg-gray-700 dark:text-white" /></div>
                 </div>
               </div>
@@ -949,12 +1472,117 @@
               { id: 'invoices', label: 'Bills', icon: 'receipt' },
               { id: 'products', label: 'Stock', icon: 'package' },
               { id: 'customers', label: 'Cust', icon: 'users' },
+              ...(currentUser.role === 'admin' || currentUser.canViewReports ? [{ id: 'reports', label: 'Reports', icon: 'bar-chart-3' }] : []),
+              ...(currentUser.role === 'admin' ? [{ id: 'users_tab', label: 'Users', icon: 'shield' }] : []),
             ].map(nav => (
               <button key={nav.id} onClick={() => setActiveTab(nav.id)} className={`flex flex-col items-center p-1 text-[10px] ${activeTab === nav.id ? 'text-brand-600 font-bold' : 'text-gray-400'}`}>
                 <i data-lucide={nav.icon} className="w-5 h-5 mb-0.5"></i><span>{nav.label}</span>
               </button>
             ))}
           </nav>
+
+          {/* EDIT USER PRIVILEGES MODAL */}
+          {showEditUserModal && editingUser && (
+            <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-3">
+              <div className="bg-white dark:bg-gray-800 p-5 rounded-2xl max-w-md w-full shadow-2xl space-y-3">
+                <h3 className="font-bold text-sm dark:text-white">Edit User: {editingUser.username}</h3>
+                <form onSubmit={handleSaveEditedUser} className="space-y-3 text-xs">
+                  <div>
+                    <label className="font-semibold text-gray-500 dark:text-gray-400">Password</label>
+                    <input type="text" required value={editingUser.password} onChange={e => setEditingUser({ ...editingUser, password: e.target.value })} className="w-full p-2 border dark:border-gray-700 rounded mt-1 dark:bg-gray-700 dark:text-white" />
+                  </div>
+                  <div>
+                    <label className="font-semibold text-gray-500 dark:text-gray-400">Role</label>
+                    <select value={editingUser.role} onChange={e => setEditingUser({ ...editingUser, role: e.target.value })} className="w-full p-2 border dark:border-gray-700 rounded mt-1 dark:bg-gray-700 dark:text-white">
+                      <option value="salesman">Salesman / Staff</option>
+                      <option value="admin">Admin</option>
+                    </select>
+                  </div>
+                  <div className="space-y-2 pt-2 border-t dark:border-gray-700">
+                    <label className="flex items-center space-x-2 cursor-pointer">
+                      <input type="checkbox" checked={editingUser.canEditStock} onChange={e => setEditingUser({ ...editingUser, canEditStock: e.target.checked })} className="rounded" />
+                      <span className="dark:text-white">Privilege: Can Add / Edit / Delete Stock</span>
+                    </label>
+                    <label className="flex items-center space-x-2 cursor-pointer">
+                      <input type="checkbox" checked={editingUser.canDeleteBills} onChange={e => setEditingUser({ ...editingUser, canDeleteBills: e.target.checked })} className="rounded" />
+                      <span className="dark:text-white">Privilege: Can Edit / Delete Bills</span>
+                    </label>
+                    <label className="flex items-center space-x-2 cursor-pointer">
+                      <input type="checkbox" checked={editingUser.canViewReports} onChange={e => setEditingUser({ ...editingUser, canViewReports: e.target.checked })} className="rounded" />
+                      <span className="dark:text-white">Privilege: Can View Reports Hub</span>
+                    </label>
+                  </div>
+                  <div className="flex justify-end space-x-2 pt-2">
+                    <button type="button" onClick={() => setShowEditUserModal(false)} className="px-3 py-1.5 bg-gray-200 dark:bg-gray-700 dark:text-white rounded">Cancel</button>
+                    <button type="submit" className="px-3 py-1.5 bg-brand-600 text-white rounded font-bold">Save Changes</button>
+                  </div>
+                </form>
+              </div>
+            </div>
+          )}
+
+          {/* CREATE USER MODAL */}
+          {showUserModal && (
+            <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-3">
+              <div className="bg-white dark:bg-gray-800 p-5 rounded-2xl max-w-md w-full shadow-2xl space-y-3">
+                <h3 className="font-bold text-sm dark:text-white">Create New User Account</h3>
+                <form onSubmit={handleCreateUser} className="space-y-3 text-xs">
+                  <div>
+                    <label className="font-semibold text-gray-500 dark:text-gray-400">Username *</label>
+                    <input type="text" required value={newUserForm.username} onChange={e => setNewUserForm({ ...newUserForm, username: e.target.value })} className="w-full p-2 border dark:border-gray-700 rounded mt-1 dark:bg-gray-700 dark:text-white" />
+                  </div>
+                  <div>
+                    <label className="font-semibold text-gray-500 dark:text-gray-400">Password *</label>
+                    <input type="text" required value={newUserForm.password} onChange={e => setNewUserForm({ ...newUserForm, password: e.target.value })} className="w-full p-2 border dark:border-gray-700 rounded mt-1 dark:bg-gray-700 dark:text-white" />
+                  </div>
+                  <div>
+                    <label className="font-semibold text-gray-500 dark:text-gray-400">Role</label>
+                    <select value={newUserForm.role} onChange={e => setNewUserForm({ ...newUserForm, role: e.target.value })} className="w-full p-2 border dark:border-gray-700 rounded mt-1 dark:bg-gray-700 dark:text-white">
+                      <option value="salesman">Salesman / Staff</option>
+                      <option value="admin">Admin</option>
+                    </select>
+                  </div>
+                  <div className="space-y-2 pt-2 border-t dark:border-gray-700">
+                    <label className="flex items-center space-x-2 cursor-pointer">
+                      <input type="checkbox" checked={newUserForm.canEditStock} onChange={e => setNewUserForm({ ...newUserForm, canEditStock: e.target.checked })} className="rounded" />
+                      <span className="dark:text-white">Privilege: Can Add / Edit / Delete Stock</span>
+                    </label>
+                    <label className="flex items-center space-x-2 cursor-pointer">
+                      <input type="checkbox" checked={newUserForm.canDeleteBills} onChange={e => setNewUserForm({ ...newUserForm, canDeleteBills: e.target.checked })} className="rounded" />
+                      <span className="dark:text-white">Privilege: Can Edit / Delete Bills</span>
+                    </label>
+                    <label className="flex items-center space-x-2 cursor-pointer">
+                      <input type="checkbox" checked={newUserForm.canViewReports} onChange={e => setNewUserForm({ ...newUserForm, canViewReports: e.target.checked })} className="rounded" />
+                      <span className="dark:text-white">Privilege: Can View Reports Hub</span>
+                    </label>
+                  </div>
+                  <div className="flex justify-end space-x-2 pt-2">
+                    <button type="button" onClick={() => setShowUserModal(false)} className="px-3 py-1.5 bg-gray-200 dark:bg-gray-700 dark:text-white rounded">Cancel</button>
+                    <button type="submit" className="px-3 py-1.5 bg-brand-600 text-white rounded font-bold">Create User</button>
+                  </div>
+                </form>
+              </div>
+            </div>
+          )}
+
+          {/* CHANGE ADMIN PASSWORD MODAL */}
+          {showChangePassModal && (
+            <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-3">
+              <div className="bg-white dark:bg-gray-800 p-5 rounded-2xl max-w-sm w-full shadow-2xl space-y-3">
+                <h3 className="font-bold text-sm dark:text-white">Change Admin Password</h3>
+                <form onSubmit={handleUpdateAdminPassword} className="space-y-3 text-xs">
+                  <div>
+                    <label className="font-semibold text-gray-500 dark:text-gray-400">New Admin Password</label>
+                    <input type="text" required value={adminNewPass} onChange={e => setAdminNewPass(e.target.value)} placeholder="Enter new password" className="w-full p-2 border dark:border-gray-700 rounded mt-1 dark:bg-gray-700 dark:text-white" />
+                  </div>
+                  <div className="flex justify-end space-x-2 pt-2">
+                    <button type="button" onClick={() => setShowChangePassModal(false)} className="px-3 py-1.5 bg-gray-200 dark:bg-gray-700 dark:text-white rounded">Cancel</button>
+                    <button type="submit" className="px-3 py-1.5 bg-brand-600 text-white rounded font-bold">Update Password</button>
+                  </div>
+                </form>
+              </div>
+            </div>
+          )}
 
           {/* CHECKOUT MODAL */}
           {showCheckoutConfirm && (
@@ -1003,16 +1631,34 @@
               <div className="bg-white dark:bg-gray-800 p-5 rounded-2xl max-w-md w-full shadow-2xl space-y-3">
                 <h3 className="font-bold text-sm dark:text-white">{editingProd ? 'Edit Product' : 'Add Product'}</h3>
                 <form onSubmit={handleSaveProduct} className="space-y-3 text-xs">
-                  <input type="text" required placeholder="Product Name" value={prodForm.name} onChange={e => setProdForm({ ...prodForm, name: e.target.value })} className="w-full p-2 border dark:border-gray-700 rounded dark:bg-gray-700 dark:text-white" />
-                  <input type="number" step="0.01" required placeholder="Price" value={prodForm.price} onChange={e => setProdForm({ ...prodForm, price: e.target.value })} className="w-full p-2 border dark:border-gray-700 rounded dark:bg-gray-700 dark:text-white" />
-                  <input type="number" placeholder="Stock" value={prodForm.stock} onChange={e => setProdForm({ ...prodForm, stock: e.target.value })} className="w-full p-2 border dark:border-gray-700 rounded dark:bg-gray-700 dark:text-white" />
-                  <div className="flex justify-end space-x-2"><button type="button" onClick={() => setShowProdModal(false)} className="px-3 py-1.5 bg-gray-200 dark:bg-gray-700 dark:text-white rounded">Cancel</button><button type="submit" className="px-3 py-1.5 bg-brand-600 text-white rounded">Save</button></div>
+                  <div>
+                    <label className="font-semibold text-gray-500 dark:text-gray-400">Product Name *</label>
+                    <input type="text" required value={prodForm.name} onChange={e => setProdForm({ ...prodForm, name: e.target.value })} className="w-full p-2 border dark:border-gray-700 rounded mt-1 dark:bg-gray-700 dark:text-white" />
+                  </div>
+                  <div className="grid grid-cols-2 gap-2">
+                    <div>
+                      <label className="font-semibold text-gray-500 dark:text-gray-400">Code / SKU</label>
+                      <input type="text" placeholder="e.g. PRD-01" value={prodForm.code} onChange={e => setProdForm({ ...prodForm, code: e.target.value })} className="w-full p-2 border dark:border-gray-700 rounded mt-1 dark:bg-gray-700 dark:text-white font-mono" />
+                    </div>
+                    <div>
+                      <label className="font-semibold text-gray-500 dark:text-gray-400">Price (AED) *</label>
+                      <input type="number" step="0.01" required value={prodForm.price} onChange={e => setProdForm({ ...prodForm, price: e.target.value })} className="w-full p-2 border dark:border-gray-700 rounded mt-1 dark:bg-gray-700 dark:text-white" />
+                    </div>
+                  </div>
+                  <div>
+                    <label className="font-semibold text-gray-500 dark:text-gray-400">Initial Stock Quantity</label>
+                    <input type="number" value={prodForm.stock} onChange={e => setProdForm({ ...prodForm, stock: e.target.value })} className="w-full p-2 border dark:border-gray-700 rounded mt-1 dark:bg-gray-700 dark:text-white" />
+                  </div>
+                  <div className="flex justify-end space-x-2 pt-2">
+                    <button type="button" onClick={() => setShowProdModal(false)} className="px-3 py-1.5 bg-gray-200 dark:bg-gray-700 dark:text-white rounded">Cancel</button>
+                    <button type="submit" className="px-3 py-1.5 bg-brand-600 text-white rounded font-bold">{editingProd ? 'Update Product' : 'Save Product'}</button>
+                  </div>
                 </form>
               </div>
             </div>
           )}
 
-          {/* CUSTOMER MODAL (ADD / EDIT) */}
+          {/* CUSTOMER MODAL */}
           {showCustModal && (
             <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-3">
               <div className="bg-white dark:bg-gray-800 p-5 rounded-2xl max-w-md w-full shadow-2xl space-y-3">
@@ -1054,7 +1700,6 @@
             <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-3">
               <div className="bg-white p-6 rounded-2xl max-w-lg w-full text-black shadow-2xl max-h-[90vh] overflow-y-auto">
                 <div id="printable-area" className="text-xs space-y-4 font-sans bg-white p-6 text-black">
-                  {/* Header */}
                   <div className="flex justify-between items-start border-b pb-4">
                     <div>
                       <h2 className="font-black text-lg tracking-wide uppercase text-brand-700">{activeInvoice.company?.name || 'COMPANY NAME'}</h2>
@@ -1066,11 +1711,11 @@
                       <h3 className="font-extrabold text-base tracking-wider uppercase text-gray-900">{activeInvoice.type || 'Tax Invoice'}</h3>
                       <p className="font-mono font-bold text-sm text-brand-600 mt-1">{activeInvoice.invoiceNumber}</p>
                       <p className="text-[11px] text-gray-500 mt-0.5">Date: {new Date(activeInvoice.date).toLocaleDateString()}</p>
+                      <p className="text-[11px] text-gray-500">Salesman: <strong>{activeInvoice.salesman || 'admin'}</strong></p>
                       {activeInvoice.preOrderReference && <p className="text-[10px] text-emerald-700 font-bold mt-1">Pre-Order Ref: {activeInvoice.preOrderReference}</p>}
                     </div>
                   </div>
 
-                  {/* Customer Info */}
                   <div className="bg-gray-50 p-3 rounded-xl border border-gray-100 text-[11px] space-y-1">
                     <div className="font-bold text-gray-700 uppercase tracking-wider mb-1">Billed To / Bill To:</div>
                     <div className="font-bold text-sm">{activeInvoice.customer?.name}</div>
@@ -1081,7 +1726,6 @@
                     </div>
                   </div>
 
-                  {/* Items Table */}
                   <table className="w-full text-left border-collapse">
                     <thead>
                       <tr className="border-b-2 border-gray-800 text-[10px] uppercase bg-gray-100">
@@ -1103,7 +1747,6 @@
                     </tbody>
                   </table>
 
-                  {/* Totals Summary */}
                   <div className="flex justify-end pt-2 border-t border-gray-300">
                     <div className="w-60 space-y-1.5 text-[11px]">
                       <div className="flex justify-between"><span>Subtotal:</span><span>{activeInvoice.subtotal?.toFixed(2)} AED</span></div>
@@ -1116,14 +1759,12 @@
                     </div>
                   </div>
 
-                  {/* Footer */}
                   <div className="text-center text-[10px] text-gray-500 pt-4 border-t mt-6">
                     Thank you for your business! / شكراً لتعاملكم معنا<br/>
                     This is a computer-generated electronic tax invoice.
                   </div>
                 </div>
 
-                {/* Modal Action Buttons (Print, WhatsApp, Email, Close) */}
                 <div className="no-print flex flex-wrap items-center justify-between gap-2 mt-5 pt-3 border-t">
                   <div className="flex space-x-1.5">
                     <button onClick={() => handleWhatsAppShare(activeInvoice)} className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-bold flex items-center space-x-1 shadow" title="Share via WhatsApp">
